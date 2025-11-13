@@ -70,6 +70,9 @@ class UploadClient {
         const upload = new tus.Upload(file, {
             endpoint: this.tusEndpoint,
             retryDelays: [0, 3000, 5000, 10000, 20000],
+            // Performance optimization: larger chunks = faster uploads
+            chunkSize: 10 * 1024 * 1024, // 10MB chunks (up from default 5MB)
+            parallelUploads: 3, // Upload 3 chunks simultaneously
             metadata: {
                 filename: file.name,
                 filetype: file.type,

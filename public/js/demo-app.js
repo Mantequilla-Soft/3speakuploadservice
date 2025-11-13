@@ -178,22 +178,38 @@ class DemoApp {
             video.preload = 'metadata';
             
             video.onloadedmetadata = function() {
-                window.URL.revokeObjectURL(video.src);
-                const duration = video.duration;
-                
-                if (isNaN(duration) || !isFinite(duration)) {
-                    console.warn('Could not detect video duration, using default');
-                    resolve(60); // Fallback to 60 seconds
-                } else {
-                    resolve(duration);
-                }
+                // Wait a bit for duration to be available
+                setTimeout(() => {
+                    window.URL.revokeObjectURL(video.src);
+                    const duration = video.duration;
+                    
+                    if (isNaN(duration) || !isFinite(duration) || duration === 0) {
+                        console.warn('Could not detect video duration, using default');
+                        resolve(60); // Fallback to 60 seconds
+                    } else {
+                        console.log(`✅ Video duration detected: ${duration.toFixed(2)} seconds`);
+                        resolve(duration);
+                    }
+                }, 200); // Small delay to ensure duration is loaded
             };
             
-            video.onerror = function() {
-                console.warn('Error loading video metadata, using default duration');
+            video.onerror = function(e) {
+                console.error('Error loading video metadata:', e);
                 window.URL.revokeObjectURL(video.src);
                 resolve(60); // Fallback to 60 seconds
             };
+            
+            // Set timeout in case metadata never loads
+            setTimeout(() => {
+                if (video.duration && isFinite(video.duration) && video.duration > 0) {
+                    console.log(`✅ Video duration detected (timeout): ${video.duration.toFixed(2)} seconds`);
+                    resolve(video.duration);
+                } else {
+                    console.warn('Timeout waiting for video duration, using default');
+                    window.URL.revokeObjectURL(video.src);
+                    resolve(60);
+                }
+            }, 5000); // 5 second timeout
             
             video.src = window.URL.createObjectURL(file);
         });

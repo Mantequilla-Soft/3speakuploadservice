@@ -69,7 +69,7 @@ class IPFSService {
         'recursive': 'false',
         'pin': 'true'
       },
-      timeout: 120000, // 2 minute timeout for large files
+      timeout: 1800000, // 30 minutes for large video files
       maxContentLength: 8 * 1024 * 1024 * 1024, // 8GB max
       maxBodyLength: 8 * 1024 * 1024 * 1024
     });
@@ -109,7 +109,8 @@ class IPFSService {
    */
   async _uploadToFallback(filePath) {
     const form = new FormData();
-    form.append('file', fs.createReadStream(filePath));
+    const fileName = path.basename(filePath);
+    form.append('file', fs.createReadStream(filePath), fileName);
     
     const response = await axios.post(`${this.fallbackUrl}/api/v0/add`, form, {
       headers: { ...form.getHeaders() },
@@ -118,13 +119,37 @@ class IPFSService {
         'recursive': false,
         'pin': true
       },
-      timeout: 120000,
+      timeout: 1800000, // 30 minutes for large video files
       maxContentLength: 8 * 1024 * 1024 * 1024,
       maxBodyLength: 8 * 1024 * 1024 * 1024
     });
     
-    const lines = response.data.trim().split('\n');
+    console.log('📊 Fallback response type:', typeof response.data);
+    console.log('📊 Fallback response:', response.data);
+    
+    // Handle different response formats (same as supernode)
+    let responseText;
+    if (typeof response.data === 'string') {
+      responseText = response.data;
+    } else if (typeof response.data === 'object') {
+      // If it's already an object, check if it has Hash property
+      if (response.data.Hash) {
+        return { hash: response.data.Hash };
+      }
+      // Otherwise stringify it
+      responseText = JSON.stringify(response.data);
+    } else {
+      responseText = String(response.data);
+    }
+    
+    // Parse IPFS response (could be multiple JSON lines)
+    const lines = responseText.trim().split('\n');
     const result = JSON.parse(lines[lines.length - 1]);
+    
+    if (!result.Hash) {
+      throw new Error('No hash returned from fallback');
+    }
+    
     return { hash: result.Hash };
   }
 

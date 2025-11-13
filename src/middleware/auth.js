@@ -96,13 +96,17 @@ const authLimiter = rateLimit({
 
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 uploads per window per IP
+  max: 20, // Increased from 5 to 20 uploads per window per IP
   message: {
     success: false,
     error: 'Too many upload attempts, please try again later'
   },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // Use X-Forwarded-For if behind proxy
+  keyGenerator: (req) => {
+    return req.headers['x-hive-username'] || req.ip;
+  }
 });
 
 // ============================================

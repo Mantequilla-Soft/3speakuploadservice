@@ -13,6 +13,11 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // ============================================
+// TRUST PROXY (for proper IP detection behind nginx)
+// ============================================
+app.set('trust proxy', 1); // Trust first proxy (nginx)
+
+// ============================================
 // LOGGING SETUP
 // ============================================
 const logger = winston.createLogger({
@@ -64,10 +69,12 @@ app.use(cors({
 // ============================================
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // General requests
+  max: 500, // Increased from 100 - general requests per IP
   message: { success: false, error: 'Too many requests, try again later' },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // Skip rate limiting for static files
+  skip: (req) => req.path.match(/\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf)$/)
 });
 
 app.use(generalLimiter);

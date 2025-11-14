@@ -332,8 +332,15 @@ router.post('/tus-callback', async (req, res) => {
       });
     }
 
-    // Check if encoding job already exists for this video (race condition protection)
+    // Clean up expired idempotency locks (auto-healing)
     const Job = getJobModel();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    await Job.deleteMany({
+      status: 'idempotency_lock',
+      created_at: { $lt: oneHourAgo }
+    });
+
+    // Check if encoding job already exists for this video (race condition protection)
     const existingJob = await Job.findOne({
       'metadata.video_owner': owner,
       'metadata.video_permlink': permlink
@@ -392,7 +399,8 @@ router.post('/tus-callback', async (req, res) => {
             video_id: video_id,
             locked_at: new Date(),
             tus_upload_id: ID
-          }
+          },
+          expires_at: new Date(Date.now() + 45 * 60 * 1000) // Auto-expire in 45 minutes
         }
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }

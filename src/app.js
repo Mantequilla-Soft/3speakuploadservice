@@ -58,9 +58,29 @@ app.use(helmet({
   }
 }));
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://video.3speak.tv', 'https://3speak.tv', 'https://3speak.co'] 
-    : true,
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    
+    // Allow any localhost origin for development
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      return callback(null, true);
+    }
+    
+    // Allow production domains
+    const allowedOrigins = [
+      'https://video.3speak.tv',
+      'https://3speak.tv', 
+      'https://3speak.co'
+    ];
+    
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Reject other origins
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 

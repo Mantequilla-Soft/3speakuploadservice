@@ -143,3 +143,6 @@ docker-compose.yml
 # Upload directories (temp thumbnails)
 uploads/
 thumbnails/
+
+# nginx configuration files
+nginx-cors-config.txt

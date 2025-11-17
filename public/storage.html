@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPFS Storage Management - 3Speak</title>
+    <link rel="stylesheet" href="/css/storage.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🗄️ IPFS Storage Management</h1>
+            <div class="header-controls">
+                <span id="last-updated">Last updated: Never</span>
+                <button id="refresh-btn" class="btn btn-secondary">🔄 Refresh</button>
+                <button id="logout-btn" class="btn btn-danger">🚪 Logout</button>
+            </div>
+        </header>
+
+        <!-- Login Screen -->
+        <div id="login-screen" class="login-container">
+            <div class="login-box">
+                <h2>🔐 Admin Authentication Required</h2>
+                <p>Please enter your credentials to access storage management.</p>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="username">Username:</label>
+                        <input type="text" id="username" required autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password:</label>
+                        <input type="password" id="password" required autocomplete="current-password">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </form>
+                <div id="login-error" class="error-message" style="display: none;"></div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div id="dashboard" style="display: none;">
+            <!-- Storage Overview Cards -->
+            <section class="stats-overview">
+                <div class="stat-card" id="disk-card">
+                    <div class="stat-icon">💾</div>
+                    <div class="stat-content">
+                        <h3>Total Disk Space</h3>
+                        <p class="stat-value" id="disk-total">-</p>
+                        <p class="stat-detail" id="disk-available">Available: -</p>
+                    </div>
+                </div>
+
+                <div class="stat-card" id="ipfs-card">
+                    <div class="stat-icon">📦</div>
+                    <div class="stat-content">
+                        <h3>IPFS Repository Size</h3>
+                        <p class="stat-value" id="ipfs-size">-</p>
+                        <p class="stat-detail" id="ipfs-objects">Objects: -</p>
+                    </div>
+                </div>
+
+                <div class="stat-card" id="status-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-content">
+                        <h3>Storage Usage</h3>
+                        <p class="stat-value" id="usage-percent">-</p>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Pinned Files Section -->
+            <section class="files-section">
+                <div class="section-header">
+                    <h2>📌 Pinned Files</h2>
+                    <div class="section-controls">
+                        <input type="text" id="search-input" placeholder="🔍 Search CID..." class="search-box">
+                        <button id="unpin-selected-btn" class="btn btn-warning" disabled>
+                            🗑️ Unpin Selected (<span id="selected-count">0</span>)
+                        </button>
+                    </div>
+                </div>
+
+                <div class="safe-mode-notice">
+                    ⚠️ <strong>Safe Mode:</strong> Files pinned less than 24 hours ago cannot be unpinned
+                </div>
+
+                <div class="table-container">
+                    <table id="pinned-table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="select-all"></th>
+                                <th>CID</th>
+                                <th>Size</th>
+                                <th>Age</th>
+                                <th>Pin Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pinned-tbody">
+                            <tr>
+                                <td colspan="6" class="loading">Loading pinned files...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Unpinned Files / Garbage Collection Section -->
+            <section class="gc-section">
+                <div class="section-header">
+                    <h2>🗑️ Garbage Collection</h2>
+                    <button id="run-gc-btn" class="btn btn-danger">
+                        ♻️ Run Garbage Collection
+                    </button>
+                </div>
+
+                <div class="gc-info">
+                    <p>
+                        <strong>What is Garbage Collection?</strong><br>
+                        Garbage collection removes unpinned files from the IPFS repository to free up disk space.
+                    </p>
+                    <p class="warning">
+                        ⚠️ <strong>Recommended:</strong> Run garbage collection during low-traffic periods.
+                        This operation may take several minutes.
+                    </p>
+                </div>
+
+                <div class="gc-stats">
+                    <div class="gc-stat">
+                        <span class="gc-label">Estimated Reclaimable:</span>
+                        <span class="gc-value" id="reclaimable-space">Calculating...</span>
+                    </div>
+                    <div class="gc-stat">
+                        <span class="gc-label">Last GC Run:</span>
+                        <span class="gc-value" id="last-gc">Never</span>
+                    </div>
+                </div>
+
+                <div id="gc-progress" class="gc-progress" style="display: none;">
+                    <div class="spinner"></div>
+                    <span>Running garbage collection... This may take a while.</span>
+                </div>
+
+                <div id="gc-result" class="gc-result" style="display: none;"></div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3 id="modal-title">Confirm Action</h3>
+            <p id="modal-message"></p>
+            <div class="modal-actions">
+                <button id="modal-confirm" class="btn btn-primary">Confirm</button>
+                <button id="modal-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/storage-client.js"></script>
+</body>
+</html>

@@ -6,6 +6,7 @@ const winston = require('winston');
 require('dotenv').config();
 
 const uploadRoutes = require('./routes/upload');
+const storageRoutes = require('./routes/storage');
 const cleanupService = require('./services/cleanup');
 const { connectDatabases } = require('./config/database');
 
@@ -134,6 +135,7 @@ app.use(express.static('public'));
 app.use('/images', express.static('images'));
 
 app.use('/api/upload', uploadRoutes);
+app.use('/api/storage', storageRoutes);
 
 // Health check endpoint (public)
 app.get('/health', (req, res) => {

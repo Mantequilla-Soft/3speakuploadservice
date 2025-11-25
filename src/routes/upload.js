@@ -296,9 +296,8 @@ router.post('/prepare',
         originalFilename,
         duration: parseFloat(duration),
         size: parseInt(size),
-        community: community || null,  // Display name like "Politics"
-      hive: hive || null,           // Technical ID like "hive-165423"
-        hive,
+        community: community || hive || null,  // Community ID (e.g., "hive-110011")
+        hive: community || hive || null,       // Same value - for autopublish compatibility
         app,
         category,
         language,

@@ -303,10 +303,14 @@ Content-Type: application/json
   "size": 123456789,
   "duration": 180,
   "originalFilename": "video.mp4",
-  "community": "hive-181335",
+  "community": "hive-181335",  // String OR object with 'name' property
   "declineRewards": false
 }
 ```
+
+**Note:** The `community` field accepts:
+- **String:** `"hive-181335"` (community name)
+- **Object:** `{ name: "hive-181335", title: "Threespeak", ... }` (name auto-extracted)
 
 **Response:**
 ```json
@@ -464,6 +468,9 @@ Default thumbnail is automatically set if none uploaded. Check response from `/t
 
 **Wrong video duration?**  
 Use the `getVideoDuration()` helper to read actual duration from video metadata.
+
+**Community object causing errors?**  
+You can send the entire community object! The backend automatically extracts the `name` property. Just ensure the object has a `name` field (like `"hive-181335"`).
 
 ---
 

@@ -66,8 +66,27 @@ const validatePrepareUpload = [
     .withMessage('Original filename is required'),
   body('community')
     .optional()
-    .isLength({ max: 50 })
-    .withMessage('Community display name must be max 50 characters'),
+    .custom((value) => {
+      // Accept string directly
+      if (typeof value === 'string') {
+        if (value.length > 50) {
+          throw new Error('Community name must be max 50 characters');
+        }
+        return true;
+      }
+      // Accept object with name property (extract it)
+      if (typeof value === 'object' && value !== null) {
+        if (value.name && typeof value.name === 'string') {
+          if (value.name.length > 50) {
+            throw new Error('Community name must be max 50 characters');
+          }
+          return true;
+        }
+        throw new Error('Community object must have a "name" property');
+      }
+      throw new Error('Community must be a string or object with name property');
+    })
+    .withMessage('Invalid community format'),
   
   body('hive')
     .optional()
@@ -149,7 +168,7 @@ router.post('/prepare',
   validatePrepareUpload, 
   async (req, res) => {
     try {
-      const {
+      let {
         owner,
         title,
         description,
@@ -170,6 +189,18 @@ router.post('/prepare',
       } = req.body;
 
       console.log(`📤 Preparing upload for ${owner}: "${title}"`);
+
+      // Normalize community to string if it's an object
+      if (community && typeof community === 'object') {
+        console.log(`📋 Extracting community name from object:`, community);
+        community = community.name || community.title || null;
+        if (community) {
+          console.log(`✅ Using community name: ${community}`);
+        } else {
+          console.warn(`⚠️  Community object has no name/title property, setting to null`);
+          community = null;
+        }
+      }
 
       let thumbnailCid = null;
 
@@ -258,6 +289,34 @@ router.post('/prepare',
 
     } catch (error) {
       console.error('❌ Prepare upload error:', error);
+      
+      // Handle Mongoose validation errors with better messages
+      if (error.name === 'ValidationError') {
+        const validationErrors = Object.keys(error.errors).map(field => {
+          const err = error.errors[field];
+          // Format value display - don't dump huge objects
+          let valueDisplay = err.value;
+          if (typeof err.value === 'object' && err.value !== null) {
+            valueDisplay = `[Object: ${err.value.name || err.value.title || 'no name'}]`;
+          }
+          
+          return {
+            field,
+            message: err.message,
+            value: valueDisplay
+          };
+        });
+        
+        console.warn('⚠️  Validation error details:', validationErrors);
+        
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: validationErrors
+        });
+      }
+      
+      // Generic error response
       res.status(500).json({
         success: false,
         error: process.env.NODE_ENV === 'production' 

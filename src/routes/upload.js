@@ -94,9 +94,9 @@ const validatePrepareUpload = [
     .trim()
     .withMessage('Title must be 5-250 characters'),
   body('description')
-    .isLength({ min: 1, max: 10000 })
+    .isLength({ min: 1, max: 50000 })
     .trim()
-    .withMessage('Description must be 1-10000 characters'),
+    .withMessage('Description must be 1-50000 characters'),
   body('tags')
     .optional()
     .isArray({ max: 25 })

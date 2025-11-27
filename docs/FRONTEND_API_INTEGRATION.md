@@ -76,7 +76,7 @@ class ThreeSpeakUploader {
       body: JSON.stringify({
         owner: videoData.owner,              // Hive username
         title: videoData.title,              // Video title
-        description: videoData.description,  // Description
+        description: videoData.description,  // Description (max 50,000 chars)
         tags: videoData.tags,                // Array: ["tag1", "tag2"]
         size: videoData.file.size,           // File size in bytes
         duration: videoData.duration,        // Duration in seconds

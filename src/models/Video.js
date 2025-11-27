@@ -54,7 +54,7 @@ const videoSchema = new mongoose.Schema({
   description: { 
     type: String, 
     required: true,
-    maxlength: 10000
+    maxlength: 50000
   },
   tags: { 
     type: String,

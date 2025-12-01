@@ -66,6 +66,12 @@ class DemoApp {
             this.handleLogout();
         });
 
+        // In-progress refresh button
+        const refreshProgressBtn = document.getElementById('refresh-progress-btn');
+        refreshProgressBtn.addEventListener('click', () => {
+            this.checkInProgressVideos();
+        });
+
         // Traditional upload form
         const uploadForm = document.getElementById('upload-form');
         uploadForm.addEventListener('submit', (e) => {
@@ -153,6 +159,8 @@ class DemoApp {
             // Login successful - show upload page
             setTimeout(() => {
                 this.showUploadPage();
+                // Check for in-progress videos after login
+                this.checkInProgressVideos();
             }, 1000);
             
         } catch (error) {
@@ -840,6 +848,143 @@ class DemoApp {
         
         messagesContainer.appendChild(messageDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    /**
+     * Check for in-progress videos
+     */
+    async checkInProgressVideos() {
+        try {
+            const response = await fetch('/api/upload/in-progress', {
+                headers: {
+                    'X-Hive-Username': this.auth.getCurrentUser()
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch in-progress videos');
+            }
+
+            const result = await response.json();
+            
+            if (!result.success) {
+                console.error('In-progress check failed:', result.error);
+                return;
+            }
+
+            const { videos, count } = result.data;
+            
+            if (count === 0) {
+                this.hideInProgressBanner();
+            } else {
+                this.showInProgressBanner(videos);
+            }
+
+        } catch (error) {
+            console.error('In-progress check error:', error);
+            // Don't show error to user - this is optional feature
+        }
+    }
+
+    /**
+     * Show in-progress videos banner
+     */
+    showInProgressBanner(videos) {
+        const banner = document.getElementById('in-progress-banner');
+        const list = document.getElementById('in-progress-list');
+        
+        // Clear existing items
+        list.innerHTML = '';
+        
+        // Add each video
+        videos.forEach(video => {
+            const item = this.createProgressItem(video);
+            list.appendChild(item);
+        });
+        
+        // Show banner
+        banner.classList.remove('hidden');
+    }
+
+    /**
+     * Hide in-progress videos banner
+     */
+    hideInProgressBanner() {
+        const banner = document.getElementById('in-progress-banner');
+        banner.classList.add('hidden');
+    }
+
+    /**
+     * Create progress item element
+     */
+    createProgressItem(video) {
+        const item = document.createElement('div');
+        item.className = 'progress-item';
+        item.dataset.videoId = video.video_id;
+        
+        const statusLabels = {
+            'uploaded': 'Uploaded',
+            'encoding_ipfs': 'Uploading to IPFS',
+            'encoding_preparing': 'Preparing Encode',
+            'encoding_progress': 'Encoding'
+        };
+        
+        const progress = video.encoding_progress || 0;
+        const createdDate = new Date(video.created);
+        const timeAgo = this.getTimeAgo(createdDate);
+        
+        item.innerHTML = `
+            <div class="progress-header">
+                <div>
+                    <h4 class="progress-title">${this.escapeHtml(video.title)}</h4>
+                    <div class="progress-meta">
+                        <span>Uploaded ${timeAgo}</span>
+                        ${video.job_id ? `<span> • Job: ${video.job_id.substring(0, 8)}...</span>` : ''}
+                    </div>
+                </div>
+                <span class="progress-status-badge ${video.status}">
+                    ${statusLabels[video.status] || video.status}
+                </span>
+            </div>
+            
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" style="width: ${progress}%"></div>
+            </div>
+            
+            <div class="progress-text">
+                <span>${statusLabels[video.status] || video.status}</span>
+                <span><strong>${progress}%</strong></span>
+            </div>
+        `;
+        
+        return item;
+    }
+
+    /**
+     * Get time ago string
+     */
+    getTimeAgo(date) {
+        const seconds = Math.floor((new Date() - date) / 1000);
+        
+        if (seconds < 60) return 'just now';
+        
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes}m ago`;
+        
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        
+        const days = Math.floor(hours / 24);
+        return `${days}d ago`;
+    }
+
+    /**
+     * Escape HTML to prevent XSS
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 

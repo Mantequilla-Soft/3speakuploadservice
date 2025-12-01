@@ -44,6 +44,15 @@ class DemoApp {
      * Setup all event listeners
      */
     setupEventListeners() {
+        // Method tab switching
+        document.getElementById('tab-traditional').addEventListener('click', () => {
+            this.switchToTraditionalFlow();
+        });
+        
+        document.getElementById('tab-upload-first').addEventListener('click', () => {
+            this.switchToUploadFirstFlow();
+        });
+        
         // Login form
         const loginForm = document.getElementById('login-form');
         loginForm.addEventListener('submit', (e) => {
@@ -57,30 +66,73 @@ class DemoApp {
             this.handleLogout();
         });
 
-        // Upload form
+        // Traditional upload form
         const uploadForm = document.getElementById('upload-form');
         uploadForm.addEventListener('submit', (e) => {
             e.preventDefault();
             this.handleUpload();
         });
 
-        // Upload another button
+        // Upload-first form
+        const uploadFirstForm = document.getElementById('upload-first-form');
+        uploadFirstForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleUploadFirstFinalize();
+        });
+
+        // Upload another buttons
         const uploadAnotherBtn = document.getElementById('upload-another-btn');
         uploadAnotherBtn.addEventListener('click', () => {
             this.resetUploadForm();
         });
+        
+        const uploadAnotherFirstBtn = document.getElementById('upload-another-first-btn');
+        uploadAnotherFirstBtn.addEventListener('click', () => {
+            this.resetUploadFirstForm();
+        });
 
-        // File input - show file info
+        // Traditional file input
         const videoFileInput = document.getElementById('video-file');
         videoFileInput.addEventListener('change', (e) => {
             this.handleFileSelect(e);
         });
 
-        // Thumbnail input - show file info
+        // Upload-first file input - start upload immediately
+        const videoFileFirstInput = document.getElementById('video-file-first');
+        videoFileFirstInput.addEventListener('change', (e) => {
+            this.handleUploadFirstStart(e);
+        });
+
+        // Thumbnail inputs
         const thumbnailInput = document.getElementById('video-thumbnail');
         thumbnailInput.addEventListener('change', (e) => {
             this.handleThumbnailSelect(e);
         });
+        
+        const thumbnailFirstInput = document.getElementById('video-thumbnail-first');
+        thumbnailFirstInput.addEventListener('change', (e) => {
+            this.handleThumbnailSelect(e);
+        });
+    }
+    
+    /**
+     * Switch to traditional upload flow
+     */
+    switchToTraditionalFlow() {
+        document.getElementById('tab-traditional').classList.add('active');
+        document.getElementById('tab-upload-first').classList.remove('active');
+        document.getElementById('traditional-flow').classList.remove('hidden');
+        document.getElementById('upload-first-flow').classList.add('hidden');
+    }
+    
+    /**
+     * Switch to upload-first flow
+     */
+    switchToUploadFirstFlow() {
+        document.getElementById('tab-upload-first').classList.add('active');
+        document.getElementById('tab-traditional').classList.remove('active');
+        document.getElementById('upload-first-flow').classList.remove('hidden');
+        document.getElementById('traditional-flow').classList.add('hidden');
     }
 
     /**
@@ -476,6 +528,296 @@ class DemoApp {
         this.currentVideoId = null;
         this.uploadStartTime = null;
         this.uploadClient.cancelUpload();
+    }
+    
+    /**
+     * Reset upload-first form
+     */
+    resetUploadFirstForm() {
+        document.getElementById('upload-first-form').reset();
+        document.getElementById('progress-first-section').classList.add('hidden');
+        document.getElementById('upload-first-status').classList.add('hidden');
+        
+        const finalizeBtn = document.getElementById('finalize-btn');
+        finalizeBtn.disabled = true;
+        finalizeBtn.textContent = '⏳ Waiting for upload to complete...';
+        
+        document.getElementById('upload-first-form').querySelectorAll('input, textarea, select').forEach(el => {
+            el.disabled = false;
+        });
+        
+        this.uploadFirstData = null;
+        this.currentVideoId = null;
+        this.uploadStartTime = null;
+        this.uploadClient.cancelUpload();
+    }
+    
+    /**
+     * Handle upload-first flow: start upload immediately
+     */
+    async handleUploadFirstStart(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        console.log('Starting upload-first flow for:', file.name);
+        this.uploadStartTime = Date.now();
+        
+        // Show upload status
+        const statusDiv = document.getElementById('upload-first-status');
+        statusDiv.classList.remove('hidden');
+        document.getElementById('upload-first-text').textContent = `Uploading ${file.name}...`;
+        
+        try {
+            // Step 1: Get video duration
+            const duration = await this.uploadClient.getVideoDuration(file);
+            console.log('Video duration:', duration);
+            
+            // Step 2: Initialize upload (get upload_id)
+            document.getElementById('upload-first-text').textContent = 'Initializing upload...';
+            
+            const initResponse = await fetch('/api/upload/init', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.UPLOAD_SECRET_TOKEN || 'your-secret-token-here'}`
+                },
+                body: JSON.stringify({
+                    owner: this.auth.getCurrentUser(),
+                    originalFilename: file.name,
+                    size: file.size,
+                    duration
+                })
+            });
+            
+            if (!initResponse.ok) {
+                throw new Error('Failed to initialize upload');
+            }
+            
+            const initData = await initResponse.json();
+            console.log('Upload initialized:', initData.data.upload_id);
+            
+            // Store upload data for finalization
+            this.uploadFirstData = {
+                upload_id: initData.data.upload_id,
+                duration,
+                originalFilename: file.name
+            };
+            
+            // Step 3: Start TUS upload
+            document.getElementById('upload-first-text').textContent = 'Uploading to server...';
+            
+            await this.uploadClient.uploadVideo(
+                file,
+                initData.data.tus_endpoint,
+                {
+                    upload_id: initData.data.upload_id
+                },
+                (bytesUploaded, bytesTotal) => {
+                    const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(1);
+                    document.getElementById('upload-first-progress').style.width = percentage + '%';
+                    document.getElementById('upload-first-percentage').textContent = percentage + '%';
+                    document.getElementById('upload-first-text').textContent = 
+                        `Uploading ${file.name} (${percentage}%)`;
+                }
+            );
+            
+            // Step 4: Upload complete - enable submit button
+            console.log('TUS upload complete, enabling finalize button');
+            
+            statusDiv.classList.add('completed');
+            document.getElementById('upload-first-text').textContent = '✅ Upload complete! Fill out the form and submit.';
+            
+            const finalizeBtn = document.getElementById('finalize-btn');
+            finalizeBtn.disabled = false;
+            finalizeBtn.textContent = '✅ Finalize Upload';
+            
+        } catch (error) {
+            console.error('Upload-first start error:', error);
+            document.getElementById('upload-first-text').textContent = '❌ Upload failed: ' + error.message;
+            statusDiv.classList.remove('completed');
+            statusDiv.style.background = '#f8d7da';
+            statusDiv.style.borderColor = '#dc3545';
+        }
+    }
+    
+    /**
+     * Handle upload-first flow: finalize after form submission
+     */
+    async handleUploadFirstFinalize() {
+        if (!this.uploadFirstData) {
+            alert('Please select a video file first');
+            return;
+        }
+        
+        console.log('Finalizing upload:', this.uploadFirstData.upload_id);
+        
+        // Show progress section
+        document.getElementById('progress-first-section').classList.remove('hidden');
+        document.getElementById('status-text-first').textContent = 'Creating video entry...';
+        
+        // Disable form
+        document.getElementById('finalize-btn').disabled = true;
+        document.getElementById('upload-first-form').querySelectorAll('input, textarea, select, button').forEach(el => {
+            el.disabled = true;
+        });
+        
+        try {
+            // Collect form data
+            const formData = new FormData();
+            formData.append('upload_id', this.uploadFirstData.upload_id);
+            formData.append('owner', this.auth.getCurrentUser());
+            formData.append('title', document.getElementById('video-title-first').value);
+            formData.append('description', document.getElementById('video-description-first').value);
+            
+            const tagsInput = document.getElementById('video-tags-first').value;
+            if (tagsInput) {
+                const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t);
+                tags.forEach(tag => formData.append('tags[]', tag));
+            }
+            
+            const community = document.getElementById('video-community-first').value;
+            if (community) {
+                formData.append('community', community);
+            }
+            
+            const thumbnail = document.getElementById('video-thumbnail-first').files[0];
+            if (thumbnail) {
+                formData.append('thumbnail', thumbnail);
+            }
+            
+            const declineRewards = document.getElementById('decline-rewards-first').checked;
+            formData.append('declineRewards', declineRewards);
+            
+            // Send finalize request
+            this.addStatusMessageFirst('📤 Sending finalize request...');
+            
+            const response = await fetch('/api/upload/finalize', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.UPLOAD_SECRET_TOKEN || 'your-secret-token-here'}`
+                },
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Finalize failed');
+            }
+            
+            const result = await response.json();
+            console.log('Finalize result:', result);
+            
+            this.currentVideoId = result.data.video_id;
+            
+            this.addStatusMessageFirst('✅ Video entry created!');
+            this.addStatusMessageFirst('⏳ Processing IPFS upload and creating encoding job...');
+            
+            document.getElementById('status-text-first').textContent = 'Processing...';
+            
+            // Wait a moment for backend processing
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Poll for status
+            await this.pollVideoStatusFirst(this.currentVideoId);
+            
+        } catch (error) {
+            console.error('Finalize error:', error);
+            document.getElementById('status-text-first').textContent = 'Failed';
+            this.addStatusMessageFirst('❌ Error: ' + error.message, 'error');
+            
+            // Re-enable form
+            document.getElementById('finalize-btn').disabled = false;
+            document.getElementById('upload-first-form').querySelectorAll('input, textarea, select, button').forEach(el => {
+                el.disabled = false;
+            });
+        }
+    }
+    
+    /**
+     * Poll video status for upload-first flow
+     */
+    async pollVideoStatusFirst(videoId) {
+        const maxAttempts = 60;
+        let attempts = 0;
+        
+        const poll = async () => {
+            attempts++;
+            
+            try {
+                const response = await fetch(`/api/upload/video/${videoId}/status`, {
+                    headers: {
+                        'Authorization': `Bearer ${process.env.UPLOAD_SECRET_TOKEN || 'your-secret-token-here'}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Status check failed');
+                }
+                
+                const data = await response.json();
+                const video = data.data;
+                
+                console.log('Video status:', video.status);
+                document.getElementById('status-text-first').textContent = 
+                    this.getStatusLabel(video.status);
+                
+                if (video.status === 'published' || video.status === 'encoding_ready') {
+                    this.showCompletionInfoFirst(video);
+                    return;
+                }
+                
+                if (video.status === 'encoding_failed') {
+                    this.addStatusMessageFirst('❌ Encoding failed', 'error');
+                    return;
+                }
+                
+                if (attempts < maxAttempts) {
+                    setTimeout(poll, 5000);
+                } else {
+                    this.addStatusMessageFirst('⏰ Status polling timeout - check back later', 'warning');
+                }
+                
+            } catch (error) {
+                console.error('Status poll error:', error);
+                if (attempts < maxAttempts) {
+                    setTimeout(poll, 5000);
+                }
+            }
+        };
+        
+        poll();
+    }
+    
+    /**
+     * Show completion info for upload-first flow
+     */
+    showCompletionInfoFirst(video) {
+        const completionSection = document.getElementById('completion-section-first');
+        completionSection.classList.remove('hidden');
+
+        document.getElementById('video-id-first').textContent = video._id || this.currentVideoId;
+        document.getElementById('video-permlink-first').textContent = video.permlink || 'N/A';
+        document.getElementById('video-ipfs-first').textContent = video.filename || 'Processing...';
+
+        const totalTime = ((Date.now() - this.uploadStartTime) / 1000).toFixed(0);
+        this.addStatusMessageFirst(`⏱️ Total time: ${this.uploadClient.formatDuration(totalTime)}`);
+    }
+    
+    /**
+     * Add message to upload-first status timeline
+     */
+    addStatusMessageFirst(message, type = 'info') {
+        const messagesContainer = document.getElementById('status-messages-first');
+        const timestamp = new Date().toLocaleTimeString();
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `status-message-item ${type}`;
+        messageDiv.innerHTML = `
+            <span class="timestamp">[${timestamp}]</span> ${message}
+        `;
+        
+        messagesContainer.appendChild(messageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 }
 

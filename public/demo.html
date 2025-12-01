@@ -68,9 +68,29 @@
                 <button id="logout-btn" class="btn btn-small">Logout</button>
             </div>
 
-            <!-- Upload Form -->
+            <!-- Upload Method Selection -->
             <div class="card">
-                <h2>Upload Your Video</h2>
+                <h2>Choose Upload Method</h2>
+                <div class="method-tabs">
+                    <button id="tab-traditional" class="method-tab active">
+                        📝 Traditional Flow
+                        <small>Fill form first, then upload</small>
+                    </button>
+                    <button id="tab-upload-first" class="method-tab">
+                        🚀 Upload-First Flow
+                        <small>Upload starts immediately</small>
+                    </button>
+                </div>
+            </div>
+
+            <!-- TRADITIONAL FLOW -->
+            <div id="traditional-flow" class="flow-section">
+                <div class="card">
+                    <h2>📝 Traditional Upload</h2>
+                    <p class="flow-description">
+                        Fill out all metadata first, then start the video upload.
+                        This is the current production method.
+                    </p>
                 
                 <form id="upload-form">
                     <!-- Video File -->
@@ -157,7 +177,7 @@
                 </form>
             </div>
 
-            <!-- Progress Section (Hidden until upload starts) -->
+            <!-- Traditional Progress Section (Hidden until upload starts) -->
             <div id="progress-section" class="card hidden">
                 <h3>Upload Progress</h3>
                 
@@ -193,6 +213,144 @@
                     </button>
                 </div>
             </div>
+            </div>
+
+            <!-- UPLOAD-FIRST FLOW -->
+            <div id="upload-first-flow" class="flow-section hidden">
+                <div class="card">
+                    <h2>🚀 Upload-First Flow</h2>
+                    <p class="flow-description">
+                        Select your video and upload starts immediately while you fill out the metadata.
+                        Submit button becomes enabled once upload completes.
+                    </p>
+                
+                <form id="upload-first-form">
+                    <!-- Video File -->
+                    <div class="form-group">
+                        <label for="video-file-first">Video File *</label>
+                        <input 
+                            type="file" 
+                            id="video-file-first" 
+                            accept="video/*"
+                            required
+                        >
+                        <small>Upload starts automatically when you select a file</small>
+                    </div>
+
+                    <!-- Upload Status (Shown during upload) -->
+                    <div id="upload-first-status" class="upload-status hidden">
+                        <div class="status-row">
+                            <span class="status-icon">⏳</span>
+                            <span id="upload-first-text">Uploading...</span>
+                        </div>
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div id="upload-first-progress" class="progress-fill"></div>
+                            </div>
+                            <div id="upload-first-percentage" class="progress-text">0%</div>
+                        </div>
+                    </div>
+
+                    <!-- Title -->
+                    <div class="form-group">
+                        <label for="video-title-first">Title *</label>
+                        <input 
+                            type="text" 
+                            id="video-title-first" 
+                            placeholder="My Awesome Video"
+                            maxlength="100"
+                            required
+                        >
+                    </div>
+
+                    <!-- Description -->
+                    <div class="form-group">
+                        <label for="video-description-first">Description *</label>
+                        <textarea 
+                            id="video-description-first" 
+                            rows="5"
+                            placeholder="Tell us about your video..."
+                            required
+                        ></textarea>
+                    </div>
+
+                    <!-- Tags -->
+                    <div class="form-group">
+                        <label for="video-tags-first">Tags</label>
+                        <input 
+                            type="text" 
+                            id="video-tags-first" 
+                            placeholder="travel, vlog, tutorial (comma-separated)"
+                        >
+                        <small>Separate tags with commas</small>
+                    </div>
+
+                    <!-- Thumbnail -->
+                    <div class="form-group">
+                        <label for="video-thumbnail-first">Thumbnail (Optional)</label>
+                        <input 
+                            type="file" 
+                            id="video-thumbnail-first" 
+                            accept="image/*"
+                        >
+                        <small>JPG or PNG recommended. Auto-generated if not provided.</small>
+                    </div>
+
+                    <!-- Community -->
+                    <div class="form-group">
+                        <label for="video-community-first">Community</label>
+                        <select id="video-community-first">
+                            <option value="">Select a community (optional)</option>
+                            <option value="hive-181335">Threespeak</option>
+                            <option value="hive-110011">Aliento</option>
+                            <option value="hive-178315">Snapie</option>
+                        </select>
+                    </div>
+
+                    <!-- Decline Rewards -->
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="decline-rewards-first">
+                            <span>Decline Rewards (100% to null)</span>
+                        </label>
+                        <small>When enabled, post rewards will be declined and sent to null account</small>
+                    </div>
+
+                    <!-- Submit Button (Disabled until upload completes) -->
+                    <button type="submit" id="finalize-btn" class="btn btn-primary btn-large" disabled>
+                        ⏳ Waiting for upload to complete...
+                    </button>
+                    <small class="help-text">Submit button will be enabled once video upload finishes</small>
+                </form>
+            </div>
+
+            <!-- Upload-First Progress Section -->
+            <div id="progress-first-section" class="card hidden">
+                <h3>Processing Video</h3>
+                
+                <div id="current-status-first" class="status-display">
+                    <span class="status-label">Status:</span>
+                    <span id="status-text-first" class="status-value">Processing...</span>
+                </div>
+
+                <div id="status-messages-first" class="status-messages"></div>
+
+                <div id="completion-section-first" class="hidden">
+                    <div class="success-message">
+                        ✅ Video uploaded successfully!
+                    </div>
+                    <div class="video-info">
+                        <strong>Video ID:</strong> <span id="video-id-first"></span><br>
+                        <strong>Permlink:</strong> <span id="video-permlink-first"></span><br>
+                        <strong>IPFS Hash:</strong> <span id="video-ipfs-first"></span>
+                    </div>
+                    <button id="upload-another-first-btn" class="btn btn-primary">
+                        Upload Another Video
+                    </button>
+                </div>
+            </div>
+            </div>
+
         </div>
 
     </main>

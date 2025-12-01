@@ -483,3 +483,113 @@ body {
     0% { transform: translateY(-50%) rotate(0deg); }
     100% { transform: translateY(-50%) rotate(360deg); }
 }
+
+/* ============================================
+   UPLOAD METHOD TABS
+   ============================================ */
+
+.method-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+}
+
+.method-tab {
+    background: #f8f9fa;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    padding: var(--spacing-md);
+    cursor: pointer;
+    transition: all 0.3s;
+    text-align: center;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.method-tab small {
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+}
+
+.method-tab:hover {
+    border-color: var(--primary-color);
+    background: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.method-tab.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(227, 19, 55, 0.3);
+}
+
+.method-tab.active small {
+    color: rgba(255,255,255,0.9);
+}
+
+.flow-section {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.flow-description {
+    background: #e3f2fd;
+    padding: var(--spacing-sm);
+    border-radius: 4px;
+    margin-bottom: var(--spacing-md);
+    border-left: 4px solid var(--info);
+    color: #0c5460;
+}
+
+/* Upload-First Status Display */
+.upload-status {
+    background: #fff3cd;
+    border: 2px solid #ffc107;
+    border-radius: 8px;
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.upload-status .status-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+    font-weight: 600;
+    color: #856404;
+}
+
+.upload-status .status-icon {
+    font-size: 1.5rem;
+}
+
+.upload-status.completed {
+    background: #d4edda;
+    border-color: #28a745;
+}
+
+.upload-status.completed .status-row {
+    color: #155724;
+}
+
+.upload-status.completed .status-icon::before {
+    content: '✅';
+}
+
+@media (max-width: 768px) {
+    .method-tabs {
+        grid-template-columns: 1fr;
+    }
+}

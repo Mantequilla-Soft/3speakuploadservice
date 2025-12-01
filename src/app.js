@@ -50,7 +50,8 @@ app.use(helmet({
       mediaSrc: ["'self'", "blob:"],  // Allow blob URLs for video duration detection
       connectSrc: [
         "'self'", 
-        "http://localhost:1080", 
+        "http://localhost:*",  // Allow any localhost port for development
+        "http://127.0.0.1:*",  // Allow any 127.0.0.1 port
         "https://api.hive.blog", 
         "https://hived.privex.io", 
         "https://anyx.io", 

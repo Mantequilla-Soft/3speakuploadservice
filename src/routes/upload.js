@@ -3,6 +3,7 @@ const multer = require('multer');
 const { body, validationResult } = require('express-validator');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const ipfsService = require('../services/ipfs');
 const jobService = require('../services/job');

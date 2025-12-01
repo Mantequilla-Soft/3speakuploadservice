@@ -66,6 +66,16 @@ Copy the complete example below into your project.
 - ✅ Submit button enabled only when upload completes (safety)
 - ✅ No waiting after clicking "Submit"
 
+### Progress Tracking
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/upload/in-progress` | GET | Get user's videos currently encoding |
+
+**Use Case:** User uploads video, navigates to homepage. Show "Videos being processed" banner with encoding progress.
+
+**Returns:** List of videos with `job_id` for each, so frontend can poll gateway for real-time encoding progress.
+
 ---
 
 ## 💻 Complete Integration Code
@@ -421,6 +431,83 @@ Authorization: Bearer YOUR_TOKEN
   }
 }
 ```
+
+### GET /api/upload/in-progress
+
+**Purpose:** Check if user has any videos currently being processed.
+
+**Use Case:**
+```javascript
+// On homepage load
+const response = await fetch('/api/upload/in-progress', {
+  headers: { 'X-Hive-Username': 'coolmole' }
+});
+
+const { videos, count } = response.data;
+
+if (count > 0) {
+  // Show "Videos being processed" banner
+  videos.forEach(video => {
+    showProgressWidget(video.job_id, video.title);
+  });
+}
+```
+
+**Request:**
+```http
+GET /api/upload/in-progress
+X-Hive-Username: coolmole
+```
+
+**Response (videos in progress):**
+```json
+{
+  "success": true,
+  "data": {
+    "videos": [
+      {
+        "video_id": "507f1f77bcf86cd799439011",
+        "owner": "coolmole",
+        "permlink": "abc123de",
+        "title": "My Awesome Video",
+        "status": "encoding_progress",
+        "job_id": "uuid-job-123",
+        "encoding_progress": 67,
+        "created": "2025-12-01T14:00:00.000Z"
+      }
+    ],
+    "count": 1
+  }
+}
+```
+
+**Response (no videos in progress):**
+```json
+{
+  "success": true,
+  "data": {
+    "videos": [],
+    "count": 0
+  }
+}
+```
+
+**Statuses Included:**
+- `uploaded` - Just uploaded, encoder picking up
+- `encoding_ipfs` - Currently uploading to IPFS
+- `encoding_preparing` - Encoder preparing job
+- `encoding_progress` - Actively encoding
+
+**Not Included:**
+- `encoding_completed` / `published` - Already done
+- `failed` - Failed (show in separate "Failed uploads" section)
+
+**Implementation Tips:**
+1. Call on homepage load
+2. If `count > 0`, show progress banner/widget
+3. Use `job_id` to poll gateway for real-time progress
+4. Poll every 5-10 seconds until status changes to `published`
+5. Hide widget when all videos complete
 
 ---
 

@@ -141,6 +141,19 @@ GET /api/upload/video/:id/status
 - Submit enabled only when upload complete (safety)
 - No waiting after clicking submit
 
+### Progress Tracking
+
+```
+GET /api/upload/in-progress
+├─→ Returns user's videos currently encoding
+├─→ Includes job_id for each video
+└─→ Frontend can poll gateway for real-time progress
+
+Use case: User uploads, navigates to homepage
+Homepage shows "Videos being processed" banner
+Poll gateway with job_id for encoding progress
+```
+
 ### Authentication
 
 **Option 1: Bearer Token**

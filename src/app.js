@@ -47,6 +47,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
+      mediaSrc: ["'self'", "blob:"],  // Allow blob URLs for video duration detection
       connectSrc: [
         "'self'", 
         "http://localhost:1080", 

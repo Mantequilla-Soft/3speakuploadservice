@@ -579,7 +579,7 @@ class DemoApp {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.UPLOAD_SECRET_TOKEN || 'your-secret-token-here'}`
+                    'X-Hive-Username': this.auth.getCurrentUser()
                 },
                 body: JSON.stringify({
                     owner: this.auth.getCurrentUser(),
@@ -694,7 +694,7 @@ class DemoApp {
             const response = await fetch('/api/upload/finalize', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${process.env.UPLOAD_SECRET_TOKEN || 'your-secret-token-here'}`
+                    'X-Hive-Username': this.auth.getCurrentUser()
                 },
                 body: formData
             });
@@ -746,7 +746,7 @@ class DemoApp {
             try {
                 const response = await fetch(`/api/upload/video/${videoId}/status`, {
                     headers: {
-                        'Authorization': `Bearer ${process.env.UPLOAD_SECRET_TOKEN || 'your-secret-token-here'}`
+                        'X-Hive-Username': this.auth.getCurrentUser()
                     }
                 });
                 

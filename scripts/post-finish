@@ -47,14 +47,20 @@ if [[ -f "$INFO_FILE" ]]; then
     log_message "Found TUS info file: $INFO_FILE"
     # Extract metadata from info file if it exists
     VIDEO_ID=$(grep -o '"video_id":"[^"]*"' "$INFO_FILE" 2>/dev/null | cut -d'"' -f4)
+    UPLOAD_ID=$(grep -o '"upload_id":"[^"]*"' "$INFO_FILE" 2>/dev/null | cut -d'"' -f4)
     FILENAME=$(grep -o '"filename":"[^"]*"' "$INFO_FILE" 2>/dev/null | cut -d'"' -f4)
+    
+    # Clean up "undefined" string values (JavaScript sends these)
+    [[ "$VIDEO_ID" == "undefined" ]] && VIDEO_ID=""
+    [[ "$UPLOAD_ID" == "undefined" ]] && UPLOAD_ID=""
 else
     log_message "No TUS info file found, using defaults"
     VIDEO_ID=""
+    UPLOAD_ID=""
     FILENAME="upload.mp4"
 fi
 
-log_message "Extracted metadata - Video ID: $VIDEO_ID, Filename: $FILENAME"
+log_message "Extracted metadata - Video ID: $VIDEO_ID, Upload ID: $UPLOAD_ID, Filename: $FILENAME"
 
 # Get additional metadata by looking up video in database via API
 if [[ -n "$VIDEO_ID" ]]; then
@@ -90,6 +96,7 @@ UPLOAD_DATA=$(cat <<EOF
     },
     "MetaData": {
       "video_id": "$VIDEO_ID",
+      "upload_id": "$UPLOAD_ID",
       "owner": "$OWNER",
       "permlink": "$PERMLINK",
       "filename": "$FILENAME"

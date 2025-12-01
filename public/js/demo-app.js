@@ -656,6 +656,9 @@ class DemoApp {
         
         console.log('Finalizing upload:', this.uploadFirstData.upload_id);
         
+        // Small delay to allow TUS callback to process
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
         // Show progress section
         document.getElementById('progress-first-section').classList.remove('hidden');
         document.getElementById('status-text-first').textContent = 'Creating video entry...';
@@ -693,19 +696,36 @@ class DemoApp {
             const declineRewards = document.getElementById('decline-rewards-first').checked;
             formData.append('declineRewards', declineRewards);
             
-            // Send finalize request
+            // Send finalize request with retry for TUS callback timing
             this.addStatusMessageFirst('📤 Sending finalize request...');
             
-            const response = await fetch('/api/upload/finalize', {
-                method: 'POST',
-                headers: {
-                    'X-Hive-Username': this.auth.getCurrentUser()
-                },
-                body: formData
-            });
+            let response;
+            let retries = 0;
+            const maxRetries = 3;
             
-            if (!response.ok) {
+            while (retries < maxRetries) {
+                response = await fetch('/api/upload/finalize', {
+                    method: 'POST',
+                    headers: {
+                        'X-Hive-Username': this.auth.getCurrentUser()
+                    },
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    break;
+                }
+                
                 const errorData = await response.json();
+                
+                // If TUS not completed yet, wait and retry
+                if (errorData.error === 'TUS upload not completed yet' && retries < maxRetries - 1) {
+                    retries++;
+                    this.addStatusMessageFirst(`⏳ Waiting for upload processing (attempt ${retries}/${maxRetries})...`);
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    continue;
+                }
+                
                 throw new Error(errorData.error || 'Finalize failed');
             }
             

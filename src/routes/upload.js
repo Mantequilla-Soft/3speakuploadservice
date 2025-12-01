@@ -837,11 +837,14 @@ router.post('/finalize',
           : `ipfs://${DEFAULT_THUMBNAIL}`;
       }
 
+      // Generate 8-character permlink (required by 3Speak schema)
+      const generatedPermlink = permlink || crypto.randomBytes(4).toString('hex');
+      
       const videoData = {
         owner,
         title,
         description,
-        permlink: permlink || `${Date.now()}-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        permlink: generatedPermlink,
         tags_v2: Array.isArray(tags) ? tags : [tags],
         filename: null, // Will be set after IPFS upload
         size: tempUpload.size,
@@ -851,8 +854,8 @@ router.post('/finalize',
         hive: communityStr || hive || null,
         category,
         language,
-        status: 'encoding_queued',
-        beneficiaries: beneficiaries || [],
+        status: 'uploaded', // Initial status, will change to encoding_ipfs after job created
+        beneficiaries: JSON.stringify(beneficiaries || []), // Must be JSON string for legacy compatibility
         declineRewards,
         fromMobile: false,
         app: app || null,

@@ -765,7 +765,7 @@ class DemoApp {
         const maxAttempts = 60;
         let attempts = 0;
         
-        const poll = async () => {
+        while (attempts < maxAttempts) {
             attempts++;
             
             try {
@@ -796,21 +796,18 @@ class DemoApp {
                     return;
                 }
                 
-                if (attempts < maxAttempts) {
-                    setTimeout(poll, 5000);
-                } else {
-                    this.addStatusMessageFirst('⏰ Status polling timeout - check back later', 'warning');
-                }
+                // Wait 5 seconds before next poll
+                await new Promise(resolve => setTimeout(resolve, 5000));
                 
             } catch (error) {
                 console.error('Status poll error:', error);
-                if (attempts < maxAttempts) {
-                    setTimeout(poll, 5000);
-                }
+                // Wait 5 seconds before retry
+                await new Promise(resolve => setTimeout(resolve, 5000));
             }
-        };
+        }
         
-        poll();
+        // Max attempts reached
+        this.addStatusMessageFirst('⏰ Status polling timeout - check back later', 'warning');
     }
     
     /**

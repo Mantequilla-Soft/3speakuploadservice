@@ -175,6 +175,28 @@ class UploadClient {
     }
 
     /**
+     * Get video duration using HTML5 video element
+     */
+    getVideoDuration(file) {
+        return new Promise((resolve, reject) => {
+            const video = document.createElement('video');
+            video.preload = 'metadata';
+            
+            video.onloadedmetadata = () => {
+                window.URL.revokeObjectURL(video.src);
+                resolve(video.duration);
+            };
+            
+            video.onerror = () => {
+                window.URL.revokeObjectURL(video.src);
+                reject(new Error('Failed to read video metadata'));
+            };
+            
+            video.src = URL.createObjectURL(file);
+        });
+    }
+
+    /**
      * Format bytes to human readable size
      */
     formatBytes(bytes) {

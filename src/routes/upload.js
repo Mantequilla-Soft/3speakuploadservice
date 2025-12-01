@@ -1339,7 +1339,10 @@ router.get('/in-progress', requireAuth, async (req, res) => {
     
     const Video = getVideoModel();
     
-    // Find videos that are still being processed
+    // Calculate cutoff time (6 hours ago)
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    
+    // Find videos that are still being processed (and less than 6 hours old)
     const inProgressVideos = await Video.find({
       owner,
       status: {
@@ -1349,7 +1352,8 @@ router.get('/in-progress', requireAuth, async (req, res) => {
           'encoding_preparing', // Encoder preparing job
           'encoding_progress'   // Actively encoding
         ]
-      }
+      },
+      created: { $gte: sixHoursAgo } // Only videos from last 6 hours
     })
     .select('_id owner permlink title status job_id created encodingProgress')
     .sort({ created: -1 }) // Newest first

@@ -418,10 +418,15 @@ class DemoApp {
     handleStatusUpdate(statusData) {
         const { video, job } = statusData.data;
         
-        console.log('Status update:', video.status, video.encodingProgress);
+        console.log('Status update:', video.status, video.encodingProgress, 'Job:', job);
 
         // Update based on status
         switch (video.status) {
+            case 'uploaded':
+                this.updateStatus('Waiting for encoding to start...', 75);
+                this.addStatusMessage('📤 Upload complete - queued for encoding');
+                break;
+                
             case 'encoding_ipfs':
                 if (job && job.status === 'queued') {
                     this.updateStatus('Queued for encoding...', 80);
@@ -431,7 +436,27 @@ class DemoApp {
                     const displayProgress = 80 + (progress * 0.15); // 80-95%
                     this.updateStatus(`Encoding... ${progress.toFixed(1)}%`, displayProgress);
                     this.addStatusMessage(`🎬 Encoding in progress: ${progress.toFixed(1)}%`);
+                } else {
+                    this.updateStatus('Processing on IPFS...', 78);
+                    this.addStatusMessage('☁️ Uploading to IPFS...');
                 }
+                break;
+            
+            case 'encoding_preparing':
+                this.updateStatus('Preparing encoding job...', 82);
+                this.addStatusMessage('⚙️ Encoder preparing job...');
+                break;
+                
+            case 'encoding_progress':
+                const encProgress = job?.progress?.pct || video.encodingProgress || 0;
+                const displayProg = 80 + (encProgress * 0.15);
+                this.updateStatus(`Encoding... ${encProgress.toFixed(1)}%`, displayProg);
+                this.addStatusMessage(`🎬 Encoding: ${encProgress.toFixed(1)}%`);
+                break;
+                
+            case 'encoding_completed':
+                this.updateStatus('Encoding complete!', 98);
+                this.addStatusMessage('✅ Encoding complete! Publishing...');
                 break;
 
             case 'publish_manual':
@@ -442,10 +467,15 @@ class DemoApp {
                 this.showCompletionInfo(video);
                 break;
 
+            case 'failed':
             case 'encoding_failed':
                 this.updateStatus('Encoding failed', 0);
                 this.addStatusMessage('❌ Encoding failed', 'error');
                 break;
+                
+            default:
+                this.updateStatus(`Status: ${video.status}`, 80);
+                this.addStatusMessage(`📊 Status: ${video.status}`);
         }
     }
 
@@ -772,6 +802,7 @@ class DemoApp {
     async pollVideoStatusFirst(videoId) {
         const maxAttempts = 60;
         let attempts = 0;
+        let lastStatus = '';
         
         while (attempts < maxAttempts) {
             attempts++;
@@ -787,19 +818,35 @@ class DemoApp {
                     throw new Error('Status check failed');
                 }
                 
-                const data = await response.json();
-                const video = data.data;
+                const result = await response.json();
+                const video = result.data.video;
+                const job = result.data.job;
                 
-                console.log('Video status:', video.status);
-                document.getElementById('status-text-first').textContent = 
-                    this.getStatusLabel(video.status);
+                console.log('Video status:', video.status, 'Job:', job);
                 
-                if (video.status === 'published' || video.status === 'encoding_ready') {
+                // Update status text
+                const statusLabel = this.getStatusLabelFirst(video.status, video.encodingProgress, job);
+                document.getElementById('status-text-first').textContent = statusLabel;
+                
+                // Add status message on status change OR progress update
+                const currentJobStatus = job?.status || 'none';
+                const currentProgress = job?.progress?.pct?.toFixed(0) || '0';
+                const statusKey = `${video.status}-${currentJobStatus}-${currentProgress}`;
+                
+                if (statusKey !== lastStatus) {
+                    this.addStatusMessageFirst(`📊 ${statusLabel}`);
+                    lastStatus = statusKey;
+                }
+                
+                // Check for completion - either video status OR job status indicates complete
+                if (video.status === 'published' || video.status === 'encoding_completed' || 
+                    job?.status === 'complete' || job?.status === 'completed') {
+                    this.addStatusMessageFirst('✅ Video encoding complete!', 'success');
                     this.showCompletionInfoFirst(video);
                     return;
                 }
                 
-                if (video.status === 'encoding_failed') {
+                if (video.status === 'failed' || video.status === 'encoding_failed' || job?.status === 'failed') {
                     this.addStatusMessageFirst('❌ Encoding failed', 'error');
                     return;
                 }
@@ -816,6 +863,54 @@ class DemoApp {
         
         // Max attempts reached
         this.addStatusMessageFirst('⏰ Status polling timeout - check back later', 'warning');
+    }
+
+    /**
+     * Get human-readable status label
+     * Derives status from both video and job states
+     */
+    getStatusLabelFirst(status, encodingProgress, job) {
+        // If we have job info, use job status for more accurate progress
+        if (job) {
+            const jobStatus = job.status;
+            const downloadPct = job.progress?.download_pct || 0;
+            const encodePct = job.progress?.pct || 0;
+            
+            switch (jobStatus) {
+                case 'queued':
+                    return '⏳ Waiting for encoder to pick up job...';
+                case 'running':
+                    if (downloadPct < 100) {
+                        return `📥 Downloading from IPFS: ${downloadPct.toFixed(0)}%`;
+                    } else if (encodePct > 0) {
+                        return `🎬 Encoding: ${encodePct.toFixed(1)}%`;
+                    } else {
+                        return '⚙️ Encoder processing...';
+                    }
+                case 'complete':
+                    return '✅ Encoding complete! Publishing...';
+                case 'completed':
+                    return '✅ Encoding complete! Publishing...';
+                case 'failed':
+                    return '❌ Encoding failed';
+                case 'cancelled':
+                    return '🚫 Job cancelled';
+            }
+        }
+        
+        // Fallback to video status if no job info
+        const labels = {
+            'uploaded': '📤 Uploaded - Creating encoding job...',
+            'encoding_ipfs': '☁️ Uploading to IPFS...',
+            'encoding_preparing': '⚙️ Preparing encoding job...',
+            'encoding_progress': `🎬 Encoding in progress... ${encodingProgress || 0}%`,
+            'encoding_completed': '✅ Encoding complete!',
+            'published': '🎉 Published to Hive!',
+            'failed': '❌ Failed',
+            'encoding_failed': '❌ Encoding failed'
+        };
+        
+        return labels[status] || `Status: ${status}`;
     }
     
     /**

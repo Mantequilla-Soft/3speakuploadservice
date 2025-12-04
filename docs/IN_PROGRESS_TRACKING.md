@@ -41,78 +41,133 @@ Videos.find({
 
 ### Frontend Integration
 
+The `/in-progress` endpoint returns **everything you need** - no additional API calls required!
+
 ```javascript
-// On homepage load
+// On homepage/dashboard load
 async function checkInProgressVideos(username) {
   const response = await fetch('/api/upload/in-progress', {
-    headers: {
-      'X-Hive-Username': username
-    }
+    headers: { 'X-Hive-Username': username }
   });
   
   const { success, data } = await response.json();
   
-  if (!success) {
-    console.error('Failed to check in-progress videos');
-    return;
-  }
-  
-  const { videos, count } = data;
-  
-  if (count === 0) {
-    // No videos being processed
+  if (!success || data.count === 0) {
     hideProgressBanner();
     return;
   }
   
-  // Show progress banner/widget
-  showProgressBanner(videos);
+  // Show the banner with all video progress
+  showProgressBanner(data);
   
-  // Poll each video's encoding progress
-  videos.forEach(video => {
-    pollEncodingProgress(video.job_id, video.title);
-  });
+  // Start polling for updates
+  startPolling(username);
 }
 
-function showProgressBanner(videos) {
+function showProgressBanner(data) {
+  const { videos, message, overall_progress, summary } = data;
+  
   const banner = document.getElementById('progress-banner');
   banner.innerHTML = `
-    <div class="banner">
-      <h3>🎬 ${videos.length} Video(s) Being Processed</h3>
-      <div id="progress-widgets"></div>
+    <div class="encoding-banner">
+      <div class="banner-header">
+        <h3>🎬 ${message}</h3>
+        <span class="overall-progress">${overall_progress}% complete</span>
+      </div>
+      
+      <div class="summary-badges">
+        ${summary.queued > 0 ? `<span class="badge queued">${summary.queued} queued</span>` : ''}
+        ${summary.encoding > 0 ? `<span class="badge encoding">${summary.encoding} encoding</span>` : ''}
+        ${summary.finishing > 0 ? `<span class="badge finishing">${summary.finishing} publishing</span>` : ''}
+      </div>
+      
+      <div class="video-progress-list">
+        ${videos.map(video => createVideoProgressCard(video)).join('')}
+      </div>
     </div>
   `;
   banner.classList.remove('hidden');
 }
 
-function pollEncodingProgress(jobId, title) {
-  const pollInterval = setInterval(async () => {
-    // Poll status endpoint which returns both video and job status
-    const data = await getEncodingStatus(jobId);
-    const { video, job } = data;
-    
-    updateProgressWidget(jobId, {
-      title,
-      progress: job?.progress?.pct || 0,
-      status: job?.status || video.status,
-      // Show appropriate message based on job status
-      statusLabel: getStatusLabel(video, job)
+function createVideoProgressCard(video) {
+  // Everything you need is already in the response!
+  const {
+    video_id,
+    title,
+    thumbnail,
+    elapsed_minutes,
+    progress_percent,
+    status_label,
+    status_short,
+    is_complete,
+    is_failed,
+    display
+  } = video;
+  
+  const statusClass = is_failed ? 'failed' : (is_complete ? 'complete' : 'encoding');
+  
+  return `
+    <div class="video-card ${statusClass}" data-video-id="${video_id}">
+      ${thumbnail ? `<img src="${thumbnail}" class="thumbnail" />` : ''}
+      <div class="video-info">
+        <h4>${title}</h4>
+        <div class="status">${status_label}</div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${progress_percent}%"></div>
+        </div>
+        <div class="meta">
+          <span>${elapsed_minutes} min ago</span>
+          <span>${Math.round(progress_percent)}%</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Poll the same endpoint - it always returns fresh data
+let pollingInterval = null;
+
+function startPolling(username) {
+  // Clear any existing polling
+  if (pollingInterval) clearInterval(pollingInterval);
+  
+  pollingInterval = setInterval(async () => {
+    const response = await fetch('/api/upload/in-progress', {
+      headers: { 'X-Hive-Username': username }
     });
     
-    // ONLY stop when video is published (final state)
-    // job.status === 'complete' means encoding done, but must wait for publish
-    if (video.status === 'published' || video.status === 'publish_manual') {
-      clearInterval(pollInterval);
-      removeProgressWidget(jobId);
+    const { success, data } = await response.json();
+    
+    if (!success) return;
+    
+    if (data.count === 0) {
+      // All videos complete!
+      hideProgressBanner();
+      stopPolling();
+      showCompletionToast('All videos published! 🎉');
+      return;
     }
     
-    // Also stop on failure
-    if (video.status === 'failed' || job?.status === 'failed') {
-      clearInterval(pollInterval);
-      showErrorWidget(jobId, 'Encoding failed');
-    }
-  }, 5000); // Poll every 5 seconds
+    // Update the UI
+    showProgressBanner(data);
+    
+    // Check for any completed videos
+    data.videos.forEach(video => {
+      if (video.is_complete) {
+        showCompletionToast(`"${video.title}" is now live!`);
+      }
+    });
+    
+  }, 5000); // Poll every 5 seconds (as recommended in response)
 }
+
+function stopPolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+}
+````
 ```
 
 ## API Reference
@@ -120,6 +175,8 @@ function pollEncodingProgress(jobId, title) {
 ### GET /api/upload/in-progress
 
 **Authentication:** Required (X-Hive-Username header)
+
+**🚀 This is the ONE endpoint you need!** Returns everything: video info, job status, progress percentages, and display-ready labels. No need to make additional API calls.
 
 **Request:**
 ```http
@@ -138,23 +195,46 @@ X-Hive-Username: coolmole
         "owner": "coolmole",
         "permlink": "abc123de",
         "title": "My Awesome Video",
-        "status": "encoding_progress",
+        "thumbnail": "ipfs://QmXxx...",
+        "created": "2025-12-01T14:00:00.000Z",
+        "elapsed_minutes": 5,
+        
+        "video_status": "encoding_ipfs",
         "job_id": "uuid-job-123-456",
-        "encoding_progress": 67,
-        "created": "2025-12-01T14:00:00.000Z"
-      },
-      {
-        "video_id": "674c8f1a2b3c4d5e6f7a8b9d",
-        "owner": "coolmole",
-        "permlink": "def456gh",
-        "title": "Another Video",
-        "status": "encoding_ipfs",
-        "job_id": "uuid-job-789-012",
-        "encoding_progress": 23,
-        "created": "2025-12-01T13:30:00.000Z"
+        "job_status": "running",
+        "job_progress": {
+          "pct": 67.5,
+          "download_pct": 100
+        },
+        
+        "display": {
+          "phase": 2,
+          "label": "🎬 Encoding: 68%",
+          "shortLabel": "Encoding",
+          "progress": 70.5,
+          "downloadProgress": 100,
+          "encodeProgress": 67.5,
+          "isComplete": false,
+          "isFailed": false
+        },
+        
+        "progress_percent": 70.5,
+        "status_label": "🎬 Encoding: 68%",
+        "status_short": "Encoding",
+        "is_complete": false,
+        "is_failed": false
       }
     ],
-    "count": 2
+    "count": 1,
+    "summary": {
+      "queued": 0,
+      "encoding": 1,
+      "finishing": 0,
+      "failed": 0
+    },
+    "overall_progress": 71,
+    "message": "1 video being processed",
+    "poll_interval_ms": 5000
   }
 }
 ```
@@ -165,7 +245,12 @@ X-Hive-Username: coolmole
   "success": true,
   "data": {
     "videos": [],
-    "count": 0
+    "count": 0,
+    "summary": {
+      "queued": 0,
+      "encoding": 0,
+      "finishing": 0
+    }
   }
 }
 ```
@@ -180,16 +265,70 @@ X-Hive-Username: coolmole
 
 ## Response Fields
 
+### Video Object Fields
+
 | Field | Type | Description |
 |-------|------|-------------|
 | `video_id` | String | MongoDB ObjectId of video entry |
 | `owner` | String | Hive username |
 | `permlink` | String | 8-character permlink |
 | `title` | String | Video title |
-| `status` | String | Current processing status |
-| `job_id` | String | Encoding job ID (for gateway polling) |
-| `encoding_progress` | Number | 0-100 encoding progress percentage |
+| `thumbnail` | String | Thumbnail IPFS URL (if set) |
 | `created` | Date | When video was uploaded |
+| `elapsed_minutes` | Number | Minutes since upload started |
+
+### Status Fields (Raw)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `video_status` | String | Raw video.status from database |
+| `job_id` | String | Encoding job UUID |
+| `job_status` | String | Raw job.status: `queued`, `running`, `complete`, `failed` |
+| `job_progress` | Object | `{ pct: 0-100, download_pct: 0-100 }` |
+
+### Display Fields (Use These!)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `display.phase` | Number | 1=waiting, 2=encoding, 2.5=publishing, 3=done |
+| `display.label` | String | Full status with emoji (e.g., "🎬 Encoding: 68%") |
+| `display.shortLabel` | String | Short status (e.g., "Encoding") |
+| `display.progress` | Number | Overall progress 0-100 |
+| `display.downloadProgress` | Number | IPFS download progress 0-100 |
+| `display.encodeProgress` | Number | Encoding progress 0-100 |
+| `display.isComplete` | Boolean | True when video.status = "published" |
+| `display.isFailed` | Boolean | True on any failure |
+
+### Convenience Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `progress_percent` | Number | Same as display.progress |
+| `status_label` | String | Same as display.label |
+| `status_short` | String | Same as display.shortLabel |
+| `is_complete` | Boolean | Same as display.isComplete |
+| `is_failed` | Boolean | Same as display.isFailed |
+
+### Summary Object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `summary.queued` | Number | Videos waiting for encoder |
+| `summary.encoding` | Number | Videos actively encoding |
+| `summary.finishing` | Number | Videos publishing to Hive |
+| `summary.failed` | Number | Failed videos |
+| `overall_progress` | Number | Average progress of all videos |
+| `message` | String | Human-readable summary |
+| `poll_interval_ms` | Number | Recommended polling interval (5000ms) |
+
+## Status Phases
+
+| Phase | Meaning | Progress Range |
+|-------|---------|----------------|
+| 1 | Waiting for encoder to pick up job | 5-10% |
+| 2 | Actively encoding (download → transcode) | 10-90% |
+| 2.5 | Encoding done, publishing to Hive | 95% |
+| 3 | Published! Complete. | 100% |
 
 ## Status Values
 

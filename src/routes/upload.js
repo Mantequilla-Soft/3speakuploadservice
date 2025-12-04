@@ -1322,7 +1322,9 @@ router.post('/thumbnail/:video_id',
  * Query logic:
  * - Find videos owned by user
  * - Filter by encoding status (not published/failed yet)
- * - Return video info + job_id for each
+ * - Fetch full job data for each video
+ * - Calculate display-ready status labels and progress
+ * - Return everything frontend needs in ONE call
  */
 router.get('/in-progress', requireAuth, async (req, res) => {
   try {
@@ -1355,7 +1357,7 @@ router.get('/in-progress', requireAuth, async (req, res) => {
       },
       created: { $gte: sixHoursAgo } // Only videos from last 6 hours
     })
-    .select('_id owner permlink title status job_id created encodingProgress')
+    .select('_id owner permlink title status job_id created encodingProgress thumbnail filename')
     .sort({ created: -1 }) // Newest first
     .limit(10); // Reasonable limit
     
@@ -1365,30 +1367,203 @@ router.get('/in-progress', requireAuth, async (req, res) => {
         success: true,
         data: {
           videos: [],
-          count: 0
+          count: 0,
+          summary: {
+            queued: 0,
+            encoding: 0,
+            finishing: 0
+          }
         }
       });
     }
     
     console.log(`📹 Found ${inProgressVideos.length} video(s) in progress for ${owner}`);
     
-    // Format response with job IDs
-    const videosWithJobs = inProgressVideos.map(video => ({
-      video_id: video._id.toString(),
-      owner: video.owner,
-      permlink: video.permlink,
-      title: video.title,
-      status: video.status,
-      job_id: video.job_id || null,
-      encoding_progress: video.encodingProgress || 0,
-      created: video.created
-    }));
+    // Fetch all jobs in parallel for efficiency
+    const jobPromises = inProgressVideos.map(async (video) => {
+      if (!video.job_id) return null;
+      try {
+        const job = await jobService.findJobByVideo(video.owner, video.permlink);
+        return job ? job.toPublicJSON() : null;
+      } catch (err) {
+        console.warn(`Failed to fetch job for ${video.permlink}:`, err.message);
+        return null;
+      }
+    });
+    
+    const jobs = await Promise.all(jobPromises);
+    
+    // Helper to calculate display status following 3-phase flow
+    const getDisplayStatus = (video, job) => {
+      // PHASE 3: Check for completion
+      if (video.status === 'published' || video.status === 'publish_manual') {
+        return {
+          phase: 3,
+          label: '🎉 Published!',
+          shortLabel: 'Published',
+          progress: 100,
+          isComplete: true,
+          isFailed: false
+        };
+      }
+      
+      // Check for failures
+      if (video.status === 'failed' || video.status === 'encoding_failed' || job?.status === 'failed') {
+        return {
+          phase: 0,
+          label: '❌ Failed',
+          shortLabel: 'Failed',
+          progress: 0,
+          isComplete: false,
+          isFailed: true
+        };
+      }
+      
+      // PHASE 1: Waiting for job
+      if (video.status === 'uploaded' || !job) {
+        return {
+          phase: 1,
+          label: '⏳ Waiting for encoder...',
+          shortLabel: 'Queued',
+          progress: 5,
+          isComplete: false,
+          isFailed: false
+        };
+      }
+      
+      // PHASE 2: Job exists - track job status
+      switch (job.status) {
+        case 'queued':
+          return {
+            phase: 2,
+            label: '⏳ Queued for encoding...',
+            shortLabel: 'Queued',
+            progress: 10,
+            isComplete: false,
+            isFailed: false
+          };
+          
+        case 'running':
+          const downloadPct = job.progress?.download_pct || 0;
+          const encodePct = job.progress?.pct || 0;
+          
+          if (downloadPct < 100) {
+            return {
+              phase: 2,
+              label: `📥 Downloading: ${Math.round(downloadPct)}%`,
+              shortLabel: 'Downloading',
+              progress: 10 + (downloadPct * 0.2), // 10-30%
+              downloadProgress: downloadPct,
+              encodeProgress: 0,
+              isComplete: false,
+              isFailed: false
+            };
+          } else {
+            return {
+              phase: 2,
+              label: `🎬 Encoding: ${Math.round(encodePct)}%`,
+              shortLabel: 'Encoding',
+              progress: 30 + (encodePct * 0.6), // 30-90%
+              downloadProgress: 100,
+              encodeProgress: encodePct,
+              isComplete: false,
+              isFailed: false
+            };
+          }
+          
+        case 'complete':
+        case 'completed':
+          return {
+            phase: 2.5,
+            label: '✅ Publishing to Hive...',
+            shortLabel: 'Publishing',
+            progress: 95,
+            downloadProgress: 100,
+            encodeProgress: 100,
+            isComplete: false, // Not complete until video.status === 'published'
+            isFailed: false
+          };
+          
+        default:
+          return {
+            phase: 2,
+            label: `Processing (${job.status})...`,
+            shortLabel: job.status,
+            progress: 50,
+            isComplete: false,
+            isFailed: false
+          };
+      }
+    };
+    
+    // Build rich response with all data frontend needs
+    const videosWithFullData = inProgressVideos.map((video, index) => {
+      const job = jobs[index];
+      const displayStatus = getDisplayStatus(video, job);
+      
+      // Calculate time elapsed
+      const createdAt = new Date(video.created);
+      const elapsedMs = Date.now() - createdAt.getTime();
+      const elapsedMinutes = Math.floor(elapsedMs / 60000);
+      
+      return {
+        // Video info
+        video_id: video._id.toString(),
+        owner: video.owner,
+        permlink: video.permlink,
+        title: video.title,
+        thumbnail: video.thumbnail || null,
+        created: video.created,
+        elapsed_minutes: elapsedMinutes,
+        
+        // Raw status (for advanced use)
+        video_status: video.status,
+        job_id: video.job_id || null,
+        job_status: job?.status || null,
+        
+        // Job progress details
+        job_progress: job?.progress || null,
+        
+        // Display-ready data (USE THIS!)
+        display: displayStatus,
+        
+        // Convenience fields
+        progress_percent: displayStatus.progress,
+        status_label: displayStatus.label,
+        status_short: displayStatus.shortLabel,
+        is_complete: displayStatus.isComplete,
+        is_failed: displayStatus.isFailed
+      };
+    });
+    
+    // Calculate summary stats
+    const summary = {
+      queued: videosWithFullData.filter(v => v.display.phase === 1 || (v.display.phase === 2 && v.job_status === 'queued')).length,
+      encoding: videosWithFullData.filter(v => v.job_status === 'running').length,
+      finishing: videosWithFullData.filter(v => v.display.phase === 2.5).length,
+      failed: videosWithFullData.filter(v => v.is_failed).length
+    };
+    
+    // Calculate overall progress (average of all videos)
+    const overallProgress = videosWithFullData.length > 0
+      ? Math.round(videosWithFullData.reduce((sum, v) => sum + v.progress_percent, 0) / videosWithFullData.length)
+      : 0;
     
     res.json({
       success: true,
       data: {
-        videos: videosWithJobs,
-        count: videosWithJobs.length
+        videos: videosWithFullData,
+        count: videosWithFullData.length,
+        summary,
+        overall_progress: overallProgress,
+        
+        // Helpful message for UI
+        message: videosWithFullData.length === 1
+          ? `1 video being processed`
+          : `${videosWithFullData.length} videos being processed`,
+          
+        // Polling hint
+        poll_interval_ms: 5000
       }
     });
     

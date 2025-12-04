@@ -519,23 +519,44 @@ Authorization: Bearer YOUR_TOKEN
 
 ### GET /api/upload/in-progress
 
-**Purpose:** Check if user has any videos currently being processed.
+**Purpose:** Get all info about user's videos currently being processed - **ONE call, everything you need!**
+
+**🚀 This endpoint returns:**
+- Video info (title, thumbnail, permlink)
+- Job status and progress
+- Display-ready labels with emojis
+- Summary statistics
+- Recommended poll interval
 
 **Use Case:**
 ```javascript
-// On homepage load
+// On homepage load - this is ALL you need!
 const response = await fetch('/api/upload/in-progress', {
   headers: { 'X-Hive-Username': 'coolmole' }
 });
 
-const { videos, count } = response.data;
+const { data } = await response.json();
 
-if (count > 0) {
-  // Show "Videos being processed" banner
-  videos.forEach(video => {
-    showProgressWidget(video.job_id, video.title);
+if (data.count > 0) {
+  // Show banner - everything is in the response!
+  showBanner(data.message); // "2 videos being processed"
+  showOverallProgress(data.overall_progress); // 45
+  
+  data.videos.forEach(video => {
+    // Use display-ready fields directly!
+    showProgressCard({
+      title: video.title,
+      thumbnail: video.thumbnail,
+      label: video.status_label,      // "🎬 Encoding: 68%"
+      progress: video.progress_percent, // 70.5
+      isComplete: video.is_complete,
+      isFailed: video.is_failed
+    });
   });
 }
+
+// Poll this same endpoint for updates
+setInterval(() => checkInProgressVideos(), 5000);
 ```
 
 **Request:**
@@ -555,13 +576,36 @@ X-Hive-Username: coolmole
         "owner": "coolmole",
         "permlink": "abc123de",
         "title": "My Awesome Video",
-        "status": "encoding_progress",
+        "thumbnail": "ipfs://QmXxx...",
+        "created": "2025-12-01T14:00:00.000Z",
+        "elapsed_minutes": 5,
+        
+        "video_status": "encoding_ipfs",
         "job_id": "uuid-job-123",
-        "encoding_progress": 67,
-        "created": "2025-12-01T14:00:00.000Z"
+        "job_status": "running",
+        "job_progress": { "pct": 67.5, "download_pct": 100 },
+        
+        "display": {
+          "phase": 2,
+          "label": "🎬 Encoding: 68%",
+          "shortLabel": "Encoding",
+          "progress": 70.5,
+          "isComplete": false,
+          "isFailed": false
+        },
+        
+        "progress_percent": 70.5,
+        "status_label": "🎬 Encoding: 68%",
+        "status_short": "Encoding",
+        "is_complete": false,
+        "is_failed": false
       }
     ],
-    "count": 1
+    "count": 1,
+    "summary": { "queued": 0, "encoding": 1, "finishing": 0, "failed": 0 },
+    "overall_progress": 71,
+    "message": "1 video being processed",
+    "poll_interval_ms": 5000
   }
 }
 ```
@@ -572,27 +616,32 @@ X-Hive-Username: coolmole
   "success": true,
   "data": {
     "videos": [],
-    "count": 0
+    "count": 0,
+    "summary": { "queued": 0, "encoding": 0, "finishing": 0 }
   }
 }
 ```
 
-**Statuses Included:**
-- `uploaded` - Just uploaded, encoder picking up
-- `encoding_ipfs` - Currently uploading to IPFS
-- `encoding_preparing` - Encoder preparing job
-- `encoding_progress` - Actively encoding
+**Key Response Fields:**
 
-**Not Included:**
-- `encoding_completed` / `published` - Already done
-- `failed` - Failed (show in separate "Failed uploads" section)
+| Field | Description |
+|-------|-------------|
+| `status_label` | Display-ready label like "🎬 Encoding: 68%" |
+| `progress_percent` | Overall progress 0-100 |
+| `is_complete` | True when published |
+| `is_failed` | True on failure |
+| `summary` | Count by status (queued/encoding/finishing/failed) |
+| `overall_progress` | Average progress of all videos |
+| `poll_interval_ms` | Recommended polling interval (5000ms) |
 
 **Implementation Tips:**
-1. Call on homepage load
-2. If `count > 0`, show progress banner/widget
-3. Use `job_id` to poll gateway for real-time progress
-4. Poll every 5-10 seconds until status changes to `published`
-5. Hide widget when all videos complete
+1. Call on homepage/dashboard load
+2. Use `status_label` directly in UI - no parsing needed!
+3. Use `progress_percent` for progress bars
+4. Poll this same endpoint every 5 seconds
+5. Stop polling when `count === 0`
+
+📖 **Full documentation:** See [IN_PROGRESS_TRACKING.md](IN_PROGRESS_TRACKING.md)
 
 ---
 

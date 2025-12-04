@@ -414,69 +414,84 @@ class DemoApp {
 
     /**
      * Handle status update from polling
+     * 
+     * Status Flow:
+     * Phase 1: video.status = "uploaded" → waiting for job creation
+     * Phase 2: video.status = "encoding_ipfs" → watch job.status + job.progress
+     *          - job.status = "queued" → waiting in queue
+     *          - job.status = "running" → show job.progress.pct
+     *          - job.status = "complete" → encoding done, wait for publish
+     * Phase 3: video.status = "published" → DONE!
      */
     handleStatusUpdate(statusData) {
         const { video, job } = statusData.data;
         
-        console.log('Status update:', video.status, video.encodingProgress, 'Job:', job);
+        console.log('Status update:', video.status, 'Job:', job?.status, 'Progress:', job?.progress?.pct);
 
-        // Update based on status
-        switch (video.status) {
-            case 'uploaded':
-                this.updateStatus('Waiting for encoding to start...', 75);
-                this.addStatusMessage('📤 Upload complete - queued for encoding');
-                break;
-                
-            case 'encoding_ipfs':
-                if (job && job.status === 'queued') {
+        // PHASE 3: Check for final published state first
+        if (video.status === 'published' || video.status === 'publish_manual') {
+            this.updateStatus('Complete!', 100);
+            this.addStatusMessage('🎉 Video published to 3Speak!');
+            this.showCompletionInfo(video);
+            return;
+        }
+
+        // Check for failures
+        if (video.status === 'failed' || video.status === 'encoding_failed' || 
+            (job && job.status === 'failed')) {
+            this.updateStatus('Encoding failed', 0);
+            this.addStatusMessage('❌ Encoding failed', 'error');
+            return;
+        }
+
+        // PHASE 1: Waiting for job to be created
+        if (video.status === 'uploaded') {
+            this.updateStatus('Waiting for encoding to start...', 75);
+            this.addStatusMessage('📤 Upload complete - queued for encoding');
+            return;
+        }
+
+        // PHASE 2: Job exists - track job status and progress
+        if (video.status === 'encoding_ipfs' || video.status === 'encoding_preparing' || 
+            video.status === 'encoding_progress' || video.status === 'encoding_completed') {
+            
+            if (!job) {
+                // Job not created yet
+                this.updateStatus('Creating encoding job...', 78);
+                this.addStatusMessage('☁️ Uploading to IPFS...');
+                return;
+            }
+
+            // Track based on job.status
+            switch (job.status) {
+                case 'queued':
                     this.updateStatus('Queued for encoding...', 80);
                     this.addStatusMessage('⏳ Waiting for encoder...');
-                } else if (job && job.status === 'running') {
-                    const progress = job.progress?.pct || video.encodingProgress || 0;
+                    break;
+                    
+                case 'running':
+                    const progress = job.progress?.pct || 0;
                     const displayProgress = 80 + (progress * 0.15); // 80-95%
                     this.updateStatus(`Encoding... ${progress.toFixed(1)}%`, displayProgress);
-                    this.addStatusMessage(`🎬 Encoding in progress: ${progress.toFixed(1)}%`);
-                } else {
-                    this.updateStatus('Processing on IPFS...', 78);
-                    this.addStatusMessage('☁️ Uploading to IPFS...');
-                }
-                break;
-            
-            case 'encoding_preparing':
-                this.updateStatus('Preparing encoding job...', 82);
-                this.addStatusMessage('⚙️ Encoder preparing job...');
-                break;
-                
-            case 'encoding_progress':
-                const encProgress = job?.progress?.pct || video.encodingProgress || 0;
-                const displayProg = 80 + (encProgress * 0.15);
-                this.updateStatus(`Encoding... ${encProgress.toFixed(1)}%`, displayProg);
-                this.addStatusMessage(`🎬 Encoding: ${encProgress.toFixed(1)}%`);
-                break;
-                
-            case 'encoding_completed':
-                this.updateStatus('Encoding complete!', 98);
-                this.addStatusMessage('✅ Encoding complete! Publishing...');
-                break;
-
-            case 'publish_manual':
-            case 'published':
-                this.updateStatus('Complete!', 100);
-                this.addStatusMessage('✅ Encoding complete!');
-                this.addStatusMessage('🎉 Video ready on 3Speak!');
-                this.showCompletionInfo(video);
-                break;
-
-            case 'failed':
-            case 'encoding_failed':
-                this.updateStatus('Encoding failed', 0);
-                this.addStatusMessage('❌ Encoding failed', 'error');
-                break;
-                
-            default:
-                this.updateStatus(`Status: ${video.status}`, 80);
-                this.addStatusMessage(`📊 Status: ${video.status}`);
+                    this.addStatusMessage(`🎬 Encoding: ${progress.toFixed(1)}%`);
+                    break;
+                    
+                case 'complete':
+                    // Job complete - now waiting for video.status to become "published"
+                    this.updateStatus('Encoding complete! Publishing to Hive...', 98);
+                    this.addStatusMessage('✅ Encoding complete! Waiting for publish...');
+                    break;
+                    
+                default:
+                    this.updateStatus(`Job status: ${job.status}`, 85);
+                    this.addStatusMessage(`📊 Job: ${job.status}`);
+            }
+            return;
         }
+
+        // Fallback for any other status
+        this.updateStatus(`Status: ${video.status}`, 80);
+        this.addStatusMessage(`📊 Status: ${video.status}`);
     }
 
     /**
@@ -838,10 +853,10 @@ class DemoApp {
                     lastStatus = statusKey;
                 }
                 
-                // Check for completion - either video status OR job status indicates complete
-                if (video.status === 'published' || video.status === 'encoding_completed' || 
-                    job?.status === 'complete' || job?.status === 'completed') {
-                    this.addStatusMessageFirst('✅ Video encoding complete!', 'success');
+                // ONLY complete when video.status is published
+                // job.status = 'complete' means encoding done, but must wait for publish!
+                if (video.status === 'published' || video.status === 'publish_manual') {
+                    this.addStatusMessageFirst('🎉 Video published to 3Speak!', 'success');
                     this.showCompletionInfoFirst(video);
                     return;
                 }

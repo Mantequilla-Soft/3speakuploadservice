@@ -87,19 +87,29 @@ function showProgressBanner(videos) {
 
 function pollEncodingProgress(jobId, title) {
   const pollInterval = setInterval(async () => {
-    // Poll gateway or your status endpoint
-    const status = await getEncodingStatus(jobId);
+    // Poll status endpoint which returns both video and job status
+    const data = await getEncodingStatus(jobId);
+    const { video, job } = data;
     
     updateProgressWidget(jobId, {
       title,
-      progress: status.progress.pct,
-      status: status.status
+      progress: job?.progress?.pct || 0,
+      status: job?.status || video.status,
+      // Show appropriate message based on job status
+      statusLabel: getStatusLabel(video, job)
     });
     
-    // Stop polling when complete
-    if (status.status === 'completed' || status.status === 'published') {
+    // ONLY stop when video is published (final state)
+    // job.status === 'complete' means encoding done, but must wait for publish
+    if (video.status === 'published' || video.status === 'publish_manual') {
       clearInterval(pollInterval);
       removeProgressWidget(jobId);
+    }
+    
+    // Also stop on failure
+    if (video.status === 'failed' || job?.status === 'failed') {
+      clearInterval(pollInterval);
+      showErrorWidget(jobId, 'Encoding failed');
     }
   }, 5000); // Poll every 5 seconds
 }

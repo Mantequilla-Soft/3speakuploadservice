@@ -209,18 +209,22 @@ class ThreeSpeakUploader {
             job,
             progress,
             statusLabel,
-            isComplete: video.status === 'published' || job?.status === 'complete',
-            isFailed: video.status === 'failed' || job?.status === 'failed'
+            // Video is ONLY complete when video.status = "published"
+            isComplete: video.status === 'published' || video.status === 'publish_manual',
+            isFailed: video.status === 'failed' || video.status === 'encoding_failed' || job?.status === 'failed'
           });
         }
 
-        // Stop when published or complete
-        if (video.status === 'published' || job?.status === 'complete') {
+        // ONLY stop when video is published (final state)
+        // Note: job.status === 'complete' means encoding done, but still need to wait for publish
+        if (video.status === 'published' || video.status === 'publish_manual') {
+          console.log('✅ Video published - stopping poll');
           clearInterval(interval);
         }
         
         // Stop on failure
-        if (video.status === 'failed' || job?.status === 'failed') {
+        if (video.status === 'failed' || video.status === 'encoding_failed' || job?.status === 'failed') {
+          console.log('❌ Failed - stopping poll');
           clearInterval(interval);
         }
       } catch (error) {
@@ -234,31 +238,51 @@ class ThreeSpeakUploader {
   
   /**
    * Get human-readable status label
-   * Combines video.status and job.status for accurate display
+   * 
+   * STATUS FLOW:
+   * Phase 1: video.status = "uploaded" → waiting for job to be created
+   * Phase 2: video.status = "encoding_ipfs" → track job.status:
+   *          - job.status = "queued" → waiting in queue
+   *          - job.status = "running" → show job.progress.pct
+   *          - job.status = "complete" → encoding done, wait for publish
+   * Phase 3: video.status = "published" → DONE!
    */
   getStatusLabel(video, job) {
-    // Check job status first (more granular)
-    if (job) {
-      if (job.status === 'complete') return '✅ Encoding Complete!';
-      if (job.status === 'running') {
-        const pct = Math.round(job.progress?.pct || 0);
-        return `🔄 Encoding: ${pct}%`;
-      }
-      if (job.status === 'queued') return '⏳ Waiting for encoder...';
-      if (job.status === 'failed') return '❌ Encoding Failed';
+    // PHASE 3: Final state - video is published
+    if (video.status === 'published' || video.status === 'publish_manual') {
+      return '🎉 Published to Hive!';
     }
     
-    // Fall back to video status
-    const labels = {
-      'uploaded': '⏳ Waiting for encoding...',
-      'encoding_ipfs': '🔄 Encoding in progress...',
-      'encoding_preparing': '🔄 Preparing encode...',
-      'encoding_progress': '🔄 Encoding...',
-      'encoding_completed': '✅ Encoding complete!',
-      'published': '🎉 Published to Hive!',
-      'failed': '❌ Failed'
-    };
-    return labels[video.status] || video.status;
+    // Check for failures
+    if (video.status === 'failed' || video.status === 'encoding_failed' || job?.status === 'failed') {
+      return '❌ Encoding Failed';
+    }
+    
+    // PHASE 1: Waiting for job creation
+    if (video.status === 'uploaded') {
+      return '⏳ Waiting for encoding...';
+    }
+    
+    // PHASE 2: Job exists - track job status
+    if (job) {
+      switch (job.status) {
+        case 'queued':
+          return '⏳ Queued for encoding...';
+        case 'running':
+          const pct = Math.round(job.progress?.pct || 0);
+          return `🔄 Encoding: ${pct}%`;
+        case 'complete':
+          return '✅ Encoding complete! Publishing...';
+      }
+    }
+    
+    // Fallback for encoding states without job info
+    if (video.status === 'encoding_ipfs' || video.status === 'encoding_preparing' || 
+        video.status === 'encoding_progress') {
+      return '🔄 Processing...';
+    }
+    
+    return video.status;
   }
 }
 
@@ -604,53 +628,73 @@ The job object has its own status that tracks encoding progress more granularly:
 
 ---
 
-## 📊 Status Polling Best Practices
+## 📊 Status Polling - The 3-Phase Flow
+
+Understanding the status flow is critical for a good user experience:
+
+### Phase 1: Waiting for Job Creation
+After upload completes, `video.status = "uploaded"`. The system creates an encoding job.
+
+### Phase 2: Encoding (Track Job Status)
+Once encoding starts, `video.status = "encoding_ipfs"`. Now track `job.status`:
+- `queued` → Waiting in encoder queue
+- `running` → Show `job.progress.pct` (0-100%)
+- `complete` → Encoding done, wait for Phase 3
+
+### Phase 3: Publishing to Hive
+After `job.status = "complete"`, wait for `video.status = "published"`.
+**IMPORTANT:** `job.status === 'complete'` does NOT mean the video is ready. Keep polling until `video.status === 'published'`.
+
+```
+Timeline:
+video.status: uploaded → encoding_ipfs → encoding_ipfs → encoding_ipfs → published ✅
+job.status:   null     → queued       → running       → complete       → complete
+job.pct:      0        → 0            → 45%           → 100%           → 100%
+```
 
 The `/api/upload/video/:id/status` endpoint returns both `video` and `job` objects. **Use BOTH to determine the true status:**
 
 ```javascript
 /**
- * Get human-readable status from video and job data
+ * Get human-readable status - follows the 3-phase flow
  */
 function getStatusLabel(video, job) {
-  // Check job status first (more accurate for encoding progress)
+  // PHASE 3: Final state
+  if (video.status === 'published' || video.status === 'publish_manual') {
+    return '🎉 Published to Hive!';
+  }
+  
+  // Check for failures
+  if (video.status === 'failed' || video.status === 'encoding_failed' || job?.status === 'failed') {
+    return '❌ Encoding Failed';
+  }
+  
+  // PHASE 1: Waiting for job
+  if (video.status === 'uploaded') {
+    return '⏳ Waiting for encoding to start...';
+  }
+  
+  // PHASE 2: Track job status
   if (job) {
-    if (job.status === 'complete') {
-      return '✅ Encoding Complete!';
-    }
-    if (job.status === 'running') {
-      const progress = job.progress?.pct || 0;
-      return `🔄 Encoding: ${Math.round(progress)}%`;
-    }
-    if (job.status === 'queued') {
-      return '⏳ Waiting for encoder...';
-    }
-    if (job.status === 'failed') {
-      return '❌ Encoding Failed';
+    switch (job.status) {
+      case 'queued':
+        return '⏳ Queued for encoding...';
+      case 'running':
+        const progress = job.progress?.pct || 0;
+        return `🔄 Encoding: ${Math.round(progress)}%`;
+      case 'complete':
+        // Job done but video not published yet
+        return '✅ Encoding complete! Publishing to Hive...';
     }
   }
   
-  // Fall back to video status
-  switch (video.status) {
-    case 'uploaded':
-      return '⏳ Waiting for encoding to start...';
-    case 'encoding_ipfs':
-    case 'encoding_preparing':
-    case 'encoding_progress':
-      return '🔄 Encoding in progress...';
-    case 'encoding_completed':
-      return '✅ Encoding complete!';
-    case 'published':
-      return '🎉 Published to Hive!';
-    case 'failed':
-      return '❌ Failed';
-    default:
-      return video.status;
-  }
+  // Fallback
+  return `Processing (${video.status})...`;
 }
 
 /**
  * Poll status with progress updates
+ * IMPORTANT: Only stop when video.status === 'published'
  */
 async function pollVideoStatus(videoId, onUpdate) {
   const maxAttempts = 120; // 10 minutes at 5 second intervals
@@ -677,17 +721,20 @@ async function pollVideoStatus(videoId, onUpdate) {
         video,
         job,
         progress: currentProgress,
-        isComplete: video.status === 'published' || job?.status === 'complete',
-        isFailed: video.status === 'failed' || job?.status === 'failed'
+        // IMPORTANT: Only truly complete when video.status === 'published'
+        isComplete: video.status === 'published' || video.status === 'publish_manual',
+        isFailed: video.status === 'failed' || video.status === 'encoding_failed' || job?.status === 'failed'
       });
       
-      // Stop polling if complete or failed
-      if (video.status === 'published' || job?.status === 'complete') {
-        console.log('✅ Encoding complete!');
+      // ONLY stop when video is published (the final state)
+      // Note: job.status === 'complete' means encoding done, but must wait for publish!
+      if (video.status === 'published' || video.status === 'publish_manual') {
+        console.log('✅ Video published to Hive!');
         return { success: true, video, job };
       }
       
-      if (video.status === 'failed' || job?.status === 'failed') {
+      // Stop on failure
+      if (video.status === 'failed' || video.status === 'encoding_failed' || job?.status === 'failed') {
         console.error('❌ Encoding failed');
         return { success: false, video, job };
       }
@@ -707,12 +754,14 @@ async function pollVideoStatus(videoId, onUpdate) {
 }
 
 // Usage example:
-pollVideoStatus(videoId, ({ label, progress, isComplete }) => {
+pollVideoStatus(videoId, ({ label, progress, isComplete, video }) => {
   document.getElementById('status-text').textContent = label;
   document.getElementById('progress-bar').style.width = `${progress}%`;
   
   if (isComplete) {
     showSuccessMessage('Video published successfully!');
+    // Redirect to video page
+    window.location.href = `/@${video.owner}/${video.permlink}`;
   }
 });
 ```

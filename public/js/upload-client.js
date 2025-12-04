@@ -139,16 +139,32 @@ class UploadClient {
 
     /**
      * Poll status once
+     * 
+     * Status Flow:
+     * 1. video.status = "uploaded" → job being created
+     * 2. video.status = "encoding_ipfs" → watch job.status (queued → running → complete)
+     * 3. video.status = "published" → DONE, stop polling
      */
     async pollStatus(videoId, username, onUpdate) {
         try {
             const status = await this.getStatus(videoId, username);
             onUpdate(status);
 
-            // Stop polling if encoding is complete
-            if (status.data.video.status === 'publish_manual' || 
-                status.data.video.status === 'published') {
+            const { video, job } = status.data;
+
+            // Stop polling if video is published (final success state)
+            if (video.status === 'publish_manual' || video.status === 'published') {
+                console.log('✅ Video published - stopping status polling');
                 this.stopStatusPolling();
+                return;
+            }
+
+            // Stop polling on failure
+            if (video.status === 'failed' || video.status === 'encoding_failed' ||
+                (job && job.status === 'failed')) {
+                console.log('❌ Encoding failed - stopping status polling');
+                this.stopStatusPolling();
+                return;
             }
         } catch (error) {
             console.error('Status polling error:', error);

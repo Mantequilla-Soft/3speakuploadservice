@@ -110,7 +110,8 @@ TUS Upload → /files (port 1080)
 └─→ Auto-publishes to Hive blockchain
 
 GET /api/upload/video/:id/status
-└─→ Real-time encoding status
+├─→ Returns video status + job status + progress
+└─→ Use job.status for accurate encoding state
 ```
 
 ### Upload-First Flow (NEW)
@@ -132,7 +133,10 @@ POST /api/upload/finalize
 └─→ Auto-publishes to Hive blockchain
 
 GET /api/upload/video/:id/status
-└─→ Real-time encoding status
+├─→ Returns video status + job status + progress
+├─→ job.status: queued → running → complete
+├─→ job.progress.pct: encoding percentage (0-100)
+└─→ See FRONTEND_API_INTEGRATION.md for status handling
 ```
 
 **Why Upload-First?**

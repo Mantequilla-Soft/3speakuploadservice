@@ -21,24 +21,6 @@ fi
 
 log_message "Processing upload completion for ID: $TUS_ID"
 
-# Check if this is a partial upload chunk (from parallel/chunked uploads)
-INFO_FILE="$UPLOAD_DIR/${TUS_ID}.info"
-
-if [[ -f "$INFO_FILE" ]]; then
-    # Check if this is a partial upload by looking at the info file
-    IS_PARTIAL=$(grep -o '"IsPartial":[^,}]*' "$INFO_FILE" 2>/dev/null | cut -d':' -f2)
-    IS_FINAL=$(grep -o '"IsFinal":[^,}]*' "$INFO_FILE" 2>/dev/null | cut -d':' -f2)
-    
-    if [[ "$IS_PARTIAL" == "true" ]]; then
-        log_message "SKIP: This is a partial upload chunk (will be processed when final upload completes)"
-        exit 0
-    fi
-    
-    log_message "Upload type - IsPartial: $IS_PARTIAL, IsFinal: $IS_FINAL"
-else
-    log_message "WARNING: No TUS info file found at $INFO_FILE"
-fi
-
 # Construct file path (TUS stores files as upload_id in upload directory)
 TUS_FILE="$UPLOAD_DIR/$TUS_ID"
 
@@ -57,7 +39,10 @@ log_message "Found upload file: $TUS_FILE"
 FILE_SIZE=$(stat -c%s "$TUS_FILE" 2>/dev/null || echo "0")
 log_message "File size: $FILE_SIZE bytes"
 
-# Extract metadata from info file
+# For now, we'll get metadata from the TUS info file or pass basic info
+# TUS stores metadata in .info files
+INFO_FILE="$UPLOAD_DIR/${TUS_ID}.info"
+
 if [[ -f "$INFO_FILE" ]]; then
     log_message "Found TUS info file: $INFO_FILE"
     # Extract metadata from info file if it exists
@@ -69,6 +54,7 @@ if [[ -f "$INFO_FILE" ]]; then
     [[ "$VIDEO_ID" == "undefined" ]] && VIDEO_ID=""
     [[ "$UPLOAD_ID" == "undefined" ]] && UPLOAD_ID=""
 else
+    log_message "No TUS info file found, using defaults"
     VIDEO_ID=""
     UPLOAD_ID=""
     FILENAME="upload.mp4"

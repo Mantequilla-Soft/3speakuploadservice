@@ -816,7 +816,9 @@ router.post('/finalize',
         declineRewards = false,
         rewardPowerup = false,
         votePercent = 1,
-        thumbnail_base64
+        thumbnail_base64,
+        publish_type = 'publish',
+        publish_data
       } = req.body;
 
       console.log(`🏁 Finalizing upload: ${upload_id}`);

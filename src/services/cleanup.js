@@ -54,7 +54,7 @@ class CleanupService {
    */
   stopScheduledCleanup() {
     if (this.scheduledTask) {
-      this.scheduledTask.destroy();
+      this.scheduledTask.stop();
       this.scheduledTask = null;
     }
     this.isSchedulerRunning = false;

@@ -102,6 +102,7 @@ const videoSchema = new mongoose.Schema({
       'encoding_progress',
       'encoding_completed',
       'published',
+      'scheduled',
       'failed'
     ],
     index: true
@@ -128,6 +129,10 @@ const videoSchema = new mongoose.Schema({
     type: String, 
     default: 'publish',
     enum: ['publish', 'schedule']
+  },
+  publish_data: {
+    type: Date,
+    required: false // Only required when publish_type === 'schedule'
   },
   community: String,
   hive: String, // Community ID like "hive-181335"

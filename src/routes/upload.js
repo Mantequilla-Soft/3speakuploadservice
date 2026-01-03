@@ -313,10 +313,58 @@ router.post('/prepare',
         declineRewards = false,
         rewardPowerup = false,
         votePercent = 1,
-        thumbnail_base64
+        thumbnail_base64,
+        publish_type = 'publish',
+        publish_data
       } = req.body;
 
       console.log(`📤 Preparing upload for ${owner}: "${title}"`);
+
+      // Validate scheduling parameters
+      let finalPublishType = publish_type || 'publish';
+      let finalPublishData = null;
+
+      if (finalPublishType === 'schedule') {
+        if (!publish_data) {
+          console.warn(`⚠️ Schedule requested but no publish_data provided, falling back to immediate publish`);
+          finalPublishType = 'publish';
+        } else {
+          const scheduledTimestamp = parseInt(publish_data);
+          
+          if (isNaN(scheduledTimestamp)) {
+            console.warn(`⚠️ Invalid publish_data timestamp, falling back to immediate publish`);
+            finalPublishType = 'publish';
+          } else {
+            const scheduledDate = new Date(scheduledTimestamp * 1000); // Convert seconds to milliseconds
+            const now = new Date();
+            const oneHourFromNow = new Date(now.getTime() + (60 * 60 * 1000));
+            const ninetyDaysFromNow = new Date(now.getTime() + (90 * 24 * 60 * 60 * 1000));
+            
+            // Validate: must be future date
+            if (scheduledDate <= now) {
+              console.warn(`⚠️ Scheduled date is in the past, falling back to immediate publish`);
+              finalPublishType = 'publish';
+            }
+            // Validate: minimum 1 hour in future
+            else if (scheduledDate < oneHourFromNow) {
+              console.warn(`⚠️ Scheduled date must be at least 1 hour in future, falling back to immediate publish`);
+              finalPublishType = 'publish';
+            }
+            // Validate: maximum 90 days in future
+            else if (scheduledDate > ninetyDaysFromNow) {
+              console.warn(`⚠️ Scheduled date exceeds 90 day limit, falling back to immediate publish`);
+              finalPublishType = 'publish';
+            }
+            // Valid schedule
+            else {
+              finalPublishData = scheduledDate;
+              console.log(`📅 Video scheduled for: ${scheduledDate.toISOString()}`);
+            }
+          }
+        }
+      }
+
+      console.log(`📤 Preparing upload for ${owner}: "${title}" (${finalPublishType})`);
 
       // Normalize community to string if it's an object
       if (community && typeof community === 'object') {
@@ -387,7 +435,9 @@ router.post('/prepare',
         votePercent,
         beneficiaries: beneficiaries || "[]",  // Empty - encoder adds payment after job completes
         local_filename: null, // Will be set during processing
-        status: 'uploaded'
+        status: 'uploaded',
+        publish_type: finalPublishType,
+        publish_data: finalPublishData
       });
 
       await video.save();
@@ -731,7 +781,15 @@ router.post('/finalize',
     body('rewardPowerup')
       .optional()
       .isBoolean()
-      .withMessage('rewardPowerup must be boolean')
+      .withMessage('rewardPowerup must be boolean'),
+    body('publish_type')
+      .optional()
+      .isIn(['publish', 'schedule'])
+      .withMessage('publish_type must be "publish" or "schedule"'),
+    body('publish_data')
+      .optional()
+      .isInt({ min: 0 })
+      .withMessage('publish_data must be a Unix timestamp in seconds')
   ],
   async (req, res) => {
     try {
@@ -798,7 +856,51 @@ router.post('/finalize',
 
       const owner = tempUpload.owner;
 
-      console.log(`📝 Creating video entry for ${owner}: "${title}"`);
+      // Validate scheduling parameters
+      let finalPublishType = publish_type || 'publish';
+      let finalPublishData = null;
+
+      if (finalPublishType === 'schedule') {
+        if (!publish_data) {
+          console.warn(`⚠️ Schedule requested but no publish_data provided, falling back to immediate publish`);
+          finalPublishType = 'publish';
+        } else {
+          const scheduledTimestamp = parseInt(publish_data);
+          
+          if (isNaN(scheduledTimestamp)) {
+            console.warn(`⚠️ Invalid publish_data timestamp, falling back to immediate publish`);
+            finalPublishType = 'publish';
+          } else {
+            const scheduledDate = new Date(scheduledTimestamp * 1000); // Convert seconds to milliseconds
+            const now = new Date();
+            const oneHourFromNow = new Date(now.getTime() + (60 * 60 * 1000));
+            const ninetyDaysFromNow = new Date(now.getTime() + (90 * 24 * 60 * 60 * 1000));
+            
+            // Validate: must be future date
+            if (scheduledDate <= now) {
+              console.warn(`⚠️ Scheduled date is in the past, falling back to immediate publish`);
+              finalPublishType = 'publish';
+            }
+            // Validate: minimum 1 hour in future
+            else if (scheduledDate < oneHourFromNow) {
+              console.warn(`⚠️ Scheduled date must be at least 1 hour in future, falling back to immediate publish`);
+              finalPublishType = 'publish';
+            }
+            // Validate: maximum 90 days in future
+            else if (scheduledDate > ninetyDaysFromNow) {
+              console.warn(`⚠️ Scheduled date exceeds 90 day limit, falling back to immediate publish`);
+              finalPublishType = 'publish';
+            }
+            // Valid schedule
+            else {
+              finalPublishData = scheduledDate;
+              console.log(`📅 Video scheduled for: ${scheduledDate.toISOString()}`);
+            }
+          }
+        }
+      }
+
+      console.log(`📝 Creating video entry for ${owner}: "${title}" (${finalPublishType})`);
 
       // Normalize community to string if it's an object
       let communityStr = community;
@@ -862,7 +964,9 @@ router.post('/finalize',
         app: app || null,
         local_filename: tempUpload.tus_file_path,
         originalFilename: tempUpload.originalFilename,
-        created: new Date()
+        created: new Date(),
+        publish_type: finalPublishType,
+        publish_data: finalPublishData
       };
 
       const video = await Video.create(videoData);

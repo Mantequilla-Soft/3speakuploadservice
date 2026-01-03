@@ -119,6 +119,17 @@ class DemoApp {
         thumbnailFirstInput.addEventListener('change', (e) => {
             this.handleThumbnailSelect(e);
         });
+
+        // Schedule checkbox listeners
+        const scheduleCheckbox = document.getElementById('schedule-post');
+        scheduleCheckbox.addEventListener('change', (e) => {
+            this.toggleScheduleDateTime('schedule-datetime-group', e.target.checked);
+        });
+
+        const scheduleCheckboxFirst = document.getElementById('schedule-post-first');
+        scheduleCheckboxFirst.addEventListener('change', (e) => {
+            this.toggleScheduleDateTime('schedule-datetime-group-first', e.target.checked);
+        });
     }
     
     /**
@@ -139,6 +150,65 @@ class DemoApp {
         document.getElementById('tab-traditional').classList.remove('active');
         document.getElementById('upload-first-flow').classList.remove('hidden');
         document.getElementById('traditional-flow').classList.add('hidden');
+    }
+
+    /**
+     * Toggle schedule date/time input visibility
+     */
+    toggleScheduleDateTime(groupId, show) {
+        const group = document.getElementById(groupId);
+        if (show) {
+            group.classList.remove('hidden');
+            // Set minimum datetime to 1 hour from now
+            const minDate = new Date(Date.now() + 60 * 60 * 1000);
+            const inputId = groupId.replace('-group', '');
+            const input = document.getElementById(inputId);
+            input.min = this.formatDateTimeLocal(minDate);
+            // Set maximum to 90 days from now
+            const maxDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+            input.max = this.formatDateTimeLocal(maxDate);
+        } else {
+            group.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Format date for datetime-local input
+     */
+    formatDateTimeLocal(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
+    /**
+     * Get scheduling parameters if enabled
+     */
+    getSchedulingParams(scheduleCheckboxId, datetimeInputId) {
+        const scheduleEnabled = document.getElementById(scheduleCheckboxId).checked;
+        if (!scheduleEnabled) {
+            return { publish_type: 'publish' };
+        }
+
+        const datetimeInput = document.getElementById(datetimeInputId);
+        const datetimeValue = datetimeInput.value;
+        
+        if (!datetimeValue) {
+            console.warn('Schedule enabled but no datetime selected, falling back to publish');
+            return { publish_type: 'publish' };
+        }
+
+        // Convert to Unix timestamp (seconds)
+        const scheduledDate = new Date(datetimeValue);
+        const publish_data = Math.floor(scheduledDate.getTime() / 1000);
+
+        return {
+            publish_type: 'schedule',
+            publish_data: publish_data
+        };
     }
 
     /**
@@ -293,6 +363,9 @@ class DemoApp {
         const thumbnailFile = document.getElementById('video-thumbnail').files[0];
         const community = document.getElementById('video-community').value;
         const declineRewards = document.getElementById('decline-rewards').checked;
+        
+        // Get scheduling parameters
+        const schedulingParams = this.getSchedulingParams('schedule-post', 'schedule-datetime');
 
         // Validate
         if (!videoFile) {
@@ -328,8 +401,11 @@ class DemoApp {
                 duration: Math.round(duration), // Actual duration in seconds
                 originalFilename: videoFile.name,
                 community: community || undefined,
-                declineRewards: declineRewards
-            };            // Step 1: Prepare upload (create DB entry)
+                declineRewards: declineRewards,
+                ...schedulingParams  // Add publish_type and publish_data if scheduling
+            };
+            
+            // Step 1: Prepare upload (create DB entry)
             this.addStatusMessage('Creating video entry...');
             const prepareResult = await this.uploadClient.prepareUpload(username, videoData);
             this.currentVideoId = prepareResult.video_id;
@@ -748,6 +824,15 @@ class DemoApp {
             
             const declineRewards = document.getElementById('decline-rewards-first').checked;
             formData.append('declineRewards', declineRewards);
+            
+            // Get scheduling parameters
+            const schedulingParams = this.getSchedulingParams('schedule-post-first', 'schedule-datetime-first');
+            if (schedulingParams.publish_type) {
+                formData.append('publish_type', schedulingParams.publish_type);
+            }
+            if (schedulingParams.publish_data) {
+                formData.append('publish_data', schedulingParams.publish_data);
+            }
             
             // Send finalize request with retry for TUS callback timing
             this.addStatusMessageFirst('📤 Sending finalize request...');

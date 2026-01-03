@@ -181,6 +181,25 @@
                         <small>When enabled, post rewards will be declined and sent to null account</small>
                     </div>
 
+                    <!-- Scheduling Options -->
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="schedule-post">
+                            <span>📅 Schedule for Later</span>
+                        </label>
+                        <small>Schedule this post to be published at a specific date and time</small>
+                    </div>
+
+                    <!-- Schedule Date/Time (Hidden by default) -->
+                    <div id="schedule-datetime-group" class="form-group hidden">
+                        <label for="schedule-datetime">Publish Date & Time</label>
+                        <input 
+                            type="datetime-local" 
+                            id="schedule-datetime"
+                        >
+                        <small>Must be at least 1 hour in future, maximum 90 days</small>
+                    </div>
+
                     <!-- Submit Button -->
                     <button type="submit" id="upload-btn" class="btn btn-primary btn-large">
                         📤 Start Upload
@@ -325,6 +344,25 @@
                             <span>Decline Rewards (100% to null)</span>
                         </label>
                         <small>When enabled, post rewards will be declined and sent to null account</small>
+                    </div>
+
+                    <!-- Scheduling Options -->
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="schedule-post-first">
+                            <span>📅 Schedule for Later</span>
+                        </label>
+                        <small>Schedule this post to be published at a specific date and time</small>
+                    </div>
+
+                    <!-- Schedule Date/Time (Hidden by default) -->
+                    <div id="schedule-datetime-group-first" class="form-group hidden">
+                        <label for="schedule-datetime-first">Publish Date & Time</label>
+                        <input 
+                            type="datetime-local" 
+                            id="schedule-datetime-first"
+                        >
+                        <small>Must be at least 1 hour in future, maximum 90 days</small>
                     </div>
 
                     <!-- Submit Button (Disabled until upload completes) -->

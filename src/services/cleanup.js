@@ -59,6 +59,9 @@ class CleanupService {
       this.scheduledTask.stop();
       this.scheduledTask = null;
     }
+    this.isSchedulerRunning = false;
+    console.log('✅ Cleanup scheduler stopped');
+  }
    
   /**
    * Start scheduled status healer for scheduled videos
@@ -134,7 +137,6 @@ class CleanupService {
     } catch (error) {
       console.error('❌ Failed to correct scheduled video status:', error);
     }
-  }    console.log('🛑 Cleanup scheduler stopped');
   }
 
   /**
@@ -395,15 +397,6 @@ class CleanupService {
   async forceCleanupVideo(videoId) {
     try {
 
-  /**
-   * Get status healer health
-   */
-  getStatusHealerHealth() {
-    return {
-      running: this.isStatusHealerRunning,
-      schedule: process.env.SCHEDULED_VIDEO_CHECK_CRON || '0 * * * *'
-    };
-  }
       const video = await this.Video.findById(videoId);
       if (!video) {
         throw new Error('Video not found');
@@ -477,6 +470,16 @@ class CleanupService {
       console.error('Failed to get cleanup history:', error);
       return [];
     }
+  }
+
+  /**
+   * Get status healer health
+   */
+  getStatusHealerHealth() {
+    return {
+      running: this.isStatusHealerRunning,
+      schedule: process.env.SCHEDULED_VIDEO_CHECK_CRON || '0 * * * *'
+    };
   }
 }
 

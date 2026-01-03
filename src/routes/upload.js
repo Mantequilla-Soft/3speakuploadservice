@@ -1684,4 +1684,35 @@ router.get('/in-progress', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/upload/fix-scheduled-status
+ * Manually trigger status correction for scheduled videos
+ */
+router.post('/fix-scheduled-status',
+  authLimiter,
+  requireAuth,
+  async (req, res) => {
+    try {
+      const username = req.headers['x-hive-username'];
+      console.log(`🔧 Manual status correction triggered by ${username}`);
+      
+      await cleanupService.correctScheduledVideoStatus();
+      
+      res.json({
+        success: true,
+        message: 'Scheduled video status correction completed'
+      });
+      
+    } catch (error) {
+      console.error('❌ Fix scheduled status error:', error);
+      res.status(500).json({
+        success: false,
+        error: process.env.NODE_ENV === 'production' 
+          ? 'Failed to fix scheduled status'
+          : error.message
+      });
+    }
+  }
+);
+
 module.exports = router;

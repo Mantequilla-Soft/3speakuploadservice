@@ -7,6 +7,8 @@ class CleanupService {
     this.retentionDays = parseFloat(process.env.CLEANUP_RETENTION_DAYS) || 0.25; // 6 hours for raw files
     this.isSchedulerRunning = false;
     this.scheduledTask = null;
+    this.statusHealerTask = null;
+    this.isStatusHealerRunning = false;
     
     // Lazy load models to avoid circular dependencies
     this._Video = null;
@@ -57,8 +59,82 @@ class CleanupService {
       this.scheduledTask.stop();
       this.scheduledTask = null;
     }
-    this.isSchedulerRunning = false;
-    console.log('🛑 Cleanup scheduler stopped');
+   
+  /**
+   * Start scheduled status healer for scheduled videos
+   */
+  startStatusHealer() {
+    if (this.isStatusHealerRunning) {
+      console.log('⚠️ Status healer is already running');
+      return;
+    }
+
+    const schedule = process.env.SCHEDULED_VIDEO_CHECK_CRON || '0 * * * *'; // Every hour by default
+    
+    console.log(`📅 Scheduling status healer: ${schedule}`);
+    
+    this.statusHealerTask = cron.schedule(schedule, async () => {
+      console.log('🔧 Running scheduled video status check...');
+      try {
+        await this.correctScheduledVideoStatus();
+      } catch (error) {
+        console.error('❌ Status healer failed:', error);
+      }
+    }, {
+      scheduled: true,
+      timezone: 'UTC'
+    });
+
+    this.isStatusHealerRunning = true;
+    console.log('✅ Status healer started');
+  }
+
+  /**
+   * Stop scheduled status healer
+   */
+  stopStatusHealer() {
+    if (this.statusHealerTask) {
+      this.statusHealerTask.stop();
+      this.statusHealerTask = null;
+    }
+    this.isStatusHealerRunning = false;
+    console.log('✅ Status healer stopped');
+  }
+
+  /**
+   * Correct status for scheduled videos that were incorrectly marked as "published"
+   * This happens when encoders force jobs or bypass the normal gateway flow
+   */
+  async correctScheduledVideoStatus() {
+    try {
+      const now = new Date();
+      
+      // Find videos that should be "scheduled" but are marked as "published"
+      const incorrectVideos = await this.Video.find({
+        publish_type: 'schedule',
+        status: 'published',
+        publish_data: { $gt: now } // Scheduled for future
+      });
+
+      if (incorrectVideos.length === 0) {
+        return;
+      }
+
+      console.log(`🔧 Found ${incorrectVideos.length} scheduled video(s) with incorrect status`);
+
+      let corrected = 0;
+      for (const video of incorrectVideos) {
+        video.status = 'scheduled';
+        await video.save();
+        console.log(`✅ Corrected ${video.owner}/${video.permlink} → scheduled (publishes ${video.publish_data.toISOString()})`);
+        corrected++;
+      }
+
+      console.log(`✅ Status correction complete: ${corrected} video(s) fixed`);
+    } catch (error) {
+      console.error('❌ Failed to correct scheduled video status:', error);
+    }
+  }    console.log('🛑 Cleanup scheduler stopped');
   }
 
   /**
@@ -318,6 +394,16 @@ class CleanupService {
    */
   async forceCleanupVideo(videoId) {
     try {
+
+  /**
+   * Get status healer health
+   */
+  getStatusHealerHealth() {
+    return {
+      running: this.isStatusHealerRunning,
+      schedule: process.env.SCHEDULED_VIDEO_CHECK_CRON || '0 * * * *'
+    };
+  }
       const video = await this.Video.findById(videoId);
       if (!video) {
         throw new Error('Video not found');

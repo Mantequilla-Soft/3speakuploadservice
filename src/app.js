@@ -348,6 +348,10 @@ const server = app.listen(PORT, async () => {
     cleanupService.startScheduledCleanup();
     logger.info('Cleanup service started');
     
+    // Start status healer for scheduled videos
+    cleanupService.startStatusHealer();
+    logger.info('Scheduled video status healer started');
+    
   } catch (error) {
     logger.error('Startup error:', error);
     process.exit(1);
@@ -367,6 +371,9 @@ const gracefulShutdown = (signal) => {
       
       // Stop cleanup service
       cleanupService.stopScheduledCleanup();
+      
+      // Stop status healer
+      cleanupService.stopStatusHealer();
       
       logger.info('Graceful shutdown completed');
       process.exit(0);

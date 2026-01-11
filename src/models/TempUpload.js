@@ -79,7 +79,7 @@ const tempUploadSchema = new mongoose.Schema({
   },
   expires: {
     type: Date,
-    default: () => new Date(Date.now() + 60 * 60 * 1000), // 1 hour from now
+    default: () => new Date(Date.now() + 4 * 60 * 60 * 1000), // 4 hours from now
     index: true
   }
 }, {

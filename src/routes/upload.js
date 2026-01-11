@@ -265,7 +265,7 @@ router.post('/init',
         data: {
           upload_id,
           tus_endpoint: tusEndpoint,
-          expires_in: 3600 // 1 hour
+          expires_in: 14400 // 4 hours
         }
       });
 
@@ -580,9 +580,14 @@ router.post('/tus-callback', async (req, res) => {
       const tempUpload = await TempUpload.findOne({ upload_id });
       
       if (!tempUpload) {
+        console.error(`❌ TUS callback: Upload not found for upload_id: ${upload_id}`);
+        console.error(`   This usually means:`);
+        console.error(`   1. Upload took > 4 hours (expired)`);
+        console.error(`   2. User refreshed page (lost upload_id)`);
+        console.error(`   3. Database connectivity issue`);
         return res.status(404).json({
           success: false,
-          error: 'Upload not found'
+          error: 'Upload not found or expired. Please start a new upload.'
         });
       }
 
@@ -828,9 +833,26 @@ router.post('/finalize',
       const tempUpload = await TempUpload.findOne({ upload_id });
 
       if (!tempUpload) {
+        console.error(`❌ Finalize: Upload not found for upload_id: ${upload_id}`);
+        console.error(`   Owner: ${req.headers['x-hive-username'] || 'unknown'}`);
+        console.error(`   This usually means:`);
+        console.error(`   1. Upload took > 4 hours (expired)`);
+        console.error(`   2. User refreshed page (lost upload_id)`);
+        console.error(`   3. Database connectivity issue`);
+        
+        // Check if any temp uploads exist for this user (with error protection)
+        try {
+          const userUploads = await TempUpload.find({ 
+            owner: req.headers['x-hive-username'] 
+          }).sort({ created: -1 }).limit(5);
+          console.error(`   Found ${userUploads.length} recent uploads for this user`);
+        } catch (queryError) {
+          console.error(`   Could not query user uploads: ${queryError.message}`);
+        }
+        
         return res.status(404).json({
           success: false,
-          error: 'Upload not found or expired'
+          error: 'Upload not found or expired. The upload session may have timed out (4 hour limit). Please start a new upload.'
         });
       }
 

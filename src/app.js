@@ -76,7 +76,8 @@ app.use(cors({
       'https://3speak.tv', 
       'https://3speak.co',
       'https://beta.3speak.tv',
-      'https://studio.3speak.tv'
+      'https://studio.3speak.tv',
+      'https://new.3speak.tv'  // Add new frontend domain
     ];
     
     // Allow any Vercel deployment (for development/testing)

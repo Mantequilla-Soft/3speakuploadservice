@@ -99,9 +99,30 @@ const validatePrepareUpload = [
     .trim()
     .withMessage('Description must be 1-50000 characters'),
   body('tags')
-    .optional()
-    .isArray({ max: 25 })
-    .withMessage('Tags must be an array with maximum 25 items'),
+    .optional({ checkFalsy: true })  // Allow empty arrays
+    .custom((value) => {
+      // Allow undefined, null, or empty array
+      if (!value || (Array.isArray(value) && value.length === 0)) {
+        return true;
+      }
+      // Must be an array with max 25 items
+      if (!Array.isArray(value)) {
+        throw new Error('Tags must be an array');
+      }
+      if (value.length > 25) {
+        throw new Error('Tags must have maximum 25 items');
+      }
+      // Each tag should be a string
+      for (const tag of value) {
+        if (typeof tag !== 'string') {
+          throw new Error('Each tag must be a string');
+        }
+        if (tag.length > 50) {
+          throw new Error('Each tag must be max 50 characters');
+        }
+      }
+      return true;
+    }),
   body('duration')
     .isFloat({ min: 0.1, max: 21600 })
     .withMessage('Duration must be between 0.1 and 21600 seconds (6 hours)'),
@@ -174,6 +195,7 @@ const validatePrepareUpload = [
   (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.error('❌ Validation errors:', JSON.stringify(errors.array(), null, 2));
       return res.status(400).json({ 
         success: false, 
         error: 'Validation failed',

@@ -29,6 +29,14 @@ class UploadClient {
 
         if (!response.ok) {
             const error = await response.json();
+            console.error('❌ API Error:', error);
+            
+            // Show detailed validation errors if available
+            if (error.details && Array.isArray(error.details)) {
+                const detailedErrors = error.details.map(d => `${d.path || d.param}: ${d.msg}`).join(', ');
+                throw new Error(`${error.error}: ${detailedErrors}`);
+            }
+            
             throw new Error(error.error || 'Failed to prepare upload');
         }
 

@@ -14,8 +14,8 @@ const requireAuth = (req, res, next) => {
   const hiveUsername = req.headers['x-hive-username'];
   
   if (hiveUsername) {
-    // Validate Hive username format
-    const usernameRegex = /^[a-z0-9\-]{3,16}$/;
+    // Validate Hive username format (allows letters, numbers, hyphens, and dots)
+    const usernameRegex = /^[a-z0-9\-\.]{3,16}$/;
     
     if (!usernameRegex.test(hiveUsername)) {
       return res.status(401).json({

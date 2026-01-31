@@ -32,6 +32,11 @@ class IPFSService {
       const result = await this._uploadToLocal(filePath);
       console.log(`✅ Pinned locally: ${result.hash}`);
       
+      // Announce to DHT immediately (helps encoders find content faster)
+      this._announceToLocalDHT(result.hash).catch(err => {
+        console.warn(`⚠️ Local DHT announcement failed (non-critical): ${err.message}`);
+      });
+      
       // Background sync to supernode (fire and forget - not critical path)
       this._syncToSupernodeBackground(filePath, result.hash).catch(err => {
         console.warn(`⚠️ Background supernode sync failed (non-critical): ${err.message}`);
@@ -49,6 +54,12 @@ class IPFSService {
       try {
         const result = await this._uploadToSupernode(filePath);
         console.log(`⚠️ Supernode direct upload successful: ${result.hash}`);
+        
+        // Announce to supernode DHT
+        this._announceToSupernodeDHT(result.hash).catch(err => {
+          console.warn(`⚠️ Supernode DHT announcement failed (non-critical): ${err.message}`);
+        });
+        
         return {
           hash: result.hash,
           fallbackMode: true,
@@ -109,6 +120,10 @@ class IPFSService {
       const result = await this._uploadToSupernode(filePath);
       if (result.hash === expectedHash) {
         console.log(`✅ Background: Supernode sync complete for ${expectedHash}`);
+        // Announce on supernode too
+        this._announceToSupernodeDHT(expectedHash).catch(err => {
+          console.warn(`⚠️ Background supernode DHT announcement failed: ${err.message}`);
+        });
       } else {
         console.warn(`⚠️ Background: Hash mismatch! Local: ${expectedHash}, Supernode: ${result.hash}`);
       }
@@ -117,6 +132,44 @@ class IPFSService {
       // Don't throw - this is non-critical background operation
     }
   }
+
+  /**
+   * Announce hash to local IPFS DHT
+   * Forces immediate DHT propagation for faster encoder discovery
+   * @private
+   */
+  async _announceToLocalDHT(hash) {
+    try {
+      console.log(`📢 Announcing ${hash} to local DHT...`);
+      await axios.post(`${this.fallbackUrl}/api/v0/dht/provide`, null, {
+        params: { arg: hash },
+        timeout: 30000 // 30 seconds
+      });
+      console.log(`✅ DHT announcement complete (local): ${hash}`);
+    } catch (error) {
+      // Non-critical - pinning alone will eventually announce
+      console.warn(`⚠️ Local DHT announcement failed for ${hash}:`, error.message);
+    }
+  }
+
+  /**
+   * Announce hash to supernode IPFS DHT
+   * @private
+   */
+  async _announceToSupernodeDHT(hash) {
+    try {
+      console.log(`📢 Announcing ${hash} to supernode DHT...`);
+      await axios.post(`${this.supernodeUrl}/api/v0/dht/provide`, null, {
+        params: { arg: hash },
+        timeout: 30000 // 30 seconds
+      });
+      console.log(`✅ DHT announcement complete (supernode): ${hash}`);
+    } catch (error) {
+      // Non-critical - pinning alone will eventually announce
+      console.warn(`⚠️ Supernode DHT announcement failed for ${hash}:`, error.message);
+    }
+  }
+
 
   /**
    * Upload file to 3Speak supernode

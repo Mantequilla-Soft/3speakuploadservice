@@ -992,24 +992,26 @@ router.post('/finalize',
       }
 
       // Handle thumbnail upload (file or base64)
-      let thumbnailCid = null;
+      let thumbnailUrl = null;
       if (req.file) {
         console.log(`🖼️ Uploading thumbnail file: ${req.file.originalname}`);
         const uploadResult = await ipfsService.uploadThumbnail(req.file.path);
-        thumbnailCid = uploadResult.hash;
+        // Support both Hive URLs (url field) and IPFS hashes (hash field)
+        thumbnailUrl = uploadResult.url || (uploadResult.hash ? `ipfs://${uploadResult.hash}` : null);
         fs.unlinkSync(req.file.path);
       } else if (thumbnail_base64) {
         console.log('🖼️ Uploading base64 thumbnail');
         const uploadResult = await ipfsService.uploadThumbnailBase64(thumbnail_base64);
-        thumbnailCid = uploadResult.hash;
+        // Support both Hive URLs (url field) and IPFS hashes (hash field)
+        thumbnailUrl = uploadResult.url || (uploadResult.hash ? `ipfs://${uploadResult.hash}` : null);
       }
 
       // Create video document
       const Video = getVideoModel();
       const DEFAULT_THUMBNAIL = process.env.DEFAULT_THUMBNAIL || '';
       let thumbnailValue = '';
-      if (thumbnailCid) {
-        thumbnailValue = `ipfs://${thumbnailCid}`;
+      if (thumbnailUrl) {
+        thumbnailValue = thumbnailUrl;
       } else if (DEFAULT_THUMBNAIL) {
         thumbnailValue = DEFAULT_THUMBNAIL.startsWith('ipfs://')
           ? DEFAULT_THUMBNAIL

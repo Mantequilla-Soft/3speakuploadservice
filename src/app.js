@@ -206,12 +206,17 @@ app.use('/api/storage', storageRoutes);
 
 // Health check endpoint (public)
 app.get('/health', (req, res) => {
+  const hiveImageService = require('./services/hive-image');
+  
   res.json({
     success: true,
     status: 'healthy',
     service: '3Speak Upload Service',
     timestamp: new Date().toISOString(),
-    version: require('../package.json').version
+    version: require('../package.json').version,
+    features: {
+      hiveImageUpload: hiveImageService.getStatus()
+    }
   });
 });
 

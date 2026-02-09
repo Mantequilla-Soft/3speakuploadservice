@@ -401,30 +401,60 @@ router.post('/prepare',
       }
 
       let thumbnailCid = null;
+      let thumbnailUrl = null;
+      let thumbnailSource = null;
 
       // Handle thumbnail upload (file or base64)
       if (req.file) {
         console.log(`🖼️ Uploading thumbnail file: ${req.file.originalname}`);
         const uploadResult = await ipfsService.uploadThumbnail(req.file.path);
-        thumbnailCid = uploadResult.hash;
+        
+        if (uploadResult.source === 'hive') {
+          // Hive upload successful
+          thumbnailUrl = uploadResult.url;
+          thumbnailSource = 'hive';
+          console.log(`✅ Thumbnail uploaded to Hive: ${thumbnailUrl}`);
+        } else {
+          // IPFS upload (fallback)
+          thumbnailCid = uploadResult.hash;
+          thumbnailSource = 'ipfs';
+          console.log(`✅ Thumbnail uploaded to IPFS: ${thumbnailCid}`);
+        }
         
         // Clean up temp file
         fs.unlinkSync(req.file.path);
       } else if (thumbnail_base64) {
         console.log('🖼️ Uploading base64 thumbnail');
         const uploadResult = await ipfsService.uploadThumbnailBase64(thumbnail_base64);
-        thumbnailCid = uploadResult.hash;
+        
+        if (uploadResult.source === 'hive') {
+          // Hive upload successful
+          thumbnailUrl = uploadResult.url;
+          thumbnailSource = 'hive';
+          console.log(`✅ Thumbnail uploaded to Hive: ${thumbnailUrl}`);
+        } else {
+          // IPFS upload (fallback)
+          thumbnailCid = uploadResult.hash;
+          thumbnailSource = 'ipfs';
+          console.log(`✅ Thumbnail uploaded to IPFS: ${thumbnailCid}`);
+        }
       }
 
       // Create video document
       const Video = getVideoModel();
       // Thumbnail fallback logic:
-      // - Prefer uploaded thumbnailCid
+      // - Prefer Hive URL (if available)
+      // - Else use uploaded IPFS CID
       // - Else, use DEFAULT_THUMBNAIL env var (can be either a full ipfs:// URI or a raw CID)
       // - Else, fallback to empty string (legacy expects a string, not null)
       const DEFAULT_THUMBNAIL = process.env.DEFAULT_THUMBNAIL || '';
       let thumbnailValue = '';
-      if (thumbnailCid) {
+      
+      if (thumbnailUrl) {
+        // Hive URL - store as-is (not an ipfs:// URI)
+        thumbnailValue = thumbnailUrl;
+      } else if (thumbnailCid) {
+        // IPFS CID - use ipfs:// prefix
         thumbnailValue = `ipfs://${thumbnailCid}`;
       } else if (DEFAULT_THUMBNAIL) {
         // If env value already contains ipfs:// prefix, keep it; otherwise prepend

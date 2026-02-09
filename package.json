@@ -22,6 +22,7 @@
   "author": "3Speak Development Team",
   "license": "MIT",
   "dependencies": {
+    "@hiveio/dhive": "^1.3.2",
     "axios": "^1.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

@@ -117,26 +117,24 @@ class HiveImageService {
 
   /**
    * Generate signature for Hive image upload
-   * Based on hivesnaps implementation
+   * Based on hivesnaps implementation - MUST include 'ImageSigningChallenge' prefix!
    * @private
    * @param {Buffer} imageBuffer - Image file buffer
    * @returns {string} Hex signature
    */
   _generateSignature(imageBuffer) {
-    // Create SHA-256 hash of the image content
-    const hash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
+    // CRITICAL: Create SHA-256 hash with 'ImageSigningChallenge' prefix (Hive requirement)
+    const hash = crypto.createHash('sha256');
+    hash.update('ImageSigningChallenge');
+    hash.update(imageBuffer);
+    const hashHex = hash.digest('hex');
     
     // Sign the hash buffer with the Hive private key
-    const hashBuffer = Buffer.from(hash, 'hex');
+    const hashBuffer = Buffer.from(hashHex, 'hex');
     const signature = this.privateKey.sign(hashBuffer);
     
-    // Convert signature to hex string
-    const signatureHex = signature.toString('hex');
-    
-    console.log(`🔐 Signature debug - Hash: ${hash.substring(0, 16)}..., Sig: ${signatureHex.substring(0, 16)}...`);
-    
-    // Return signature as hex string
-    return signatureHex;
+    // Return signature as string (dhive handles the format)
+    return signature.toString();
   }
 
   /**

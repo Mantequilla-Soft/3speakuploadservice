@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const axios = require('axios');
 
 class JobService {
   constructor() {
@@ -52,6 +53,40 @@ class JobService {
       
       console.log(`📋 Created encoding job: ${jobId} for ${video.owner}/${video.permlink}`);
       console.log(`📡 Input URI: ${gatewayUrl}`);
+      
+      // Trigger encoder auto-assignment
+      try {
+        const gatewayUrl = process.env.ENCODER_GATEWAY_URL || 'http://encoder-gateway.infra.3speak.tv:4005';
+        const apiKey = process.env.ENCODER_ASSIGNER_API_KEY;
+        const timeout = parseInt(process.env.ENCODER_ASSIGNER_TIMEOUT) || 5000;
+        
+        if (!apiKey) {
+          console.warn('⚠️  ENCODER_ASSIGNER_API_KEY not configured - skipping auto-assignment call');
+        } else {
+          console.log(`📢 Triggering encoder auto-assignment for job: ${jobId}`);
+          console.log(`🔗 Calling: ${gatewayUrl}/api/v0/gateway/runAssigner`);
+          
+          const response = await axios.post(
+            `${gatewayUrl}/api/v0/gateway/runAssigner`,
+            { authorization: `Bearer ${apiKey}` },
+            { 
+              timeout: timeout,
+              headers: { 'Content-Type': 'application/json' }
+            }
+          );
+          
+          console.log(`✅ Encoder auto-assignment triggered successfully (status: ${response.status})`);
+        }
+      } catch (assignerError) {
+        // Non-critical - log warning but don't fail job creation
+        // Job is queued in MongoDB, safety net scheduler will assign within 15 minutes
+        console.warn(`⚠️  Failed to trigger encoder auto-assignment: ${assignerError.message}`);
+        if (assignerError.response) {
+          console.warn(`   Response status: ${assignerError.response.status}`);
+          console.warn(`   Response data:`, assignerError.response.data);
+        }
+        console.warn(`   Job ${jobId} is queued - will be assigned by safety net scheduler`);
+      }
       
       return jobId;
     } catch (error) {

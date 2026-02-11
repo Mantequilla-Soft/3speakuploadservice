@@ -38,6 +38,15 @@ const logger = winston.createLogger({
 });
 
 // ============================================
+// CONFIGURATION VALIDATION
+// ============================================
+if (!process.env.ENCODER_ASSIGNER_API_KEY) {
+  logger.warn('⚠️  ENCODER_ASSIGNER_API_KEY not configured - encoder auto-assignment disabled');
+  logger.warn('   Jobs will rely on 15-minute safety net scheduler for assignment');
+  logger.warn('   Set ENCODER_ASSIGNER_API_KEY in .env for immediate job assignment');
+}
+
+// ============================================
 // SECURITY MIDDLEWARE
 // ============================================
 app.use(helmet({

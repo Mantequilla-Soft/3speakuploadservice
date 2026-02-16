@@ -1006,6 +1006,7 @@ router.post('/finalize',
         status: 'uploaded', // Initial status, will change to encoding_ipfs after job created
         beneficiaries: JSON.stringify(beneficiaries || []), // Must be JSON string for legacy compatibility
         declineRewards,
+        rewardPowerup,
         fromMobile: false,
         app: app || null,
         local_filename: tempUpload.tus_file_path,

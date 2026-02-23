@@ -401,30 +401,60 @@ router.post('/prepare',
       }
 
       let thumbnailCid = null;
+      let thumbnailUrl = null;
+      let thumbnailSource = null;
 
       // Handle thumbnail upload (file or base64)
       if (req.file) {
         console.log(`🖼️ Uploading thumbnail file: ${req.file.originalname}`);
         const uploadResult = await ipfsService.uploadThumbnail(req.file.path);
-        thumbnailCid = uploadResult.hash;
+        
+        if (uploadResult.source === 'hive') {
+          // Hive upload successful
+          thumbnailUrl = uploadResult.url;
+          thumbnailSource = 'hive';
+          console.log(`✅ Thumbnail uploaded to Hive: ${thumbnailUrl}`);
+        } else {
+          // IPFS upload (fallback)
+          thumbnailCid = uploadResult.hash;
+          thumbnailSource = 'ipfs';
+          console.log(`✅ Thumbnail uploaded to IPFS: ${thumbnailCid}`);
+        }
         
         // Clean up temp file
         fs.unlinkSync(req.file.path);
       } else if (thumbnail_base64) {
         console.log('🖼️ Uploading base64 thumbnail');
         const uploadResult = await ipfsService.uploadThumbnailBase64(thumbnail_base64);
-        thumbnailCid = uploadResult.hash;
+        
+        if (uploadResult.source === 'hive') {
+          // Hive upload successful
+          thumbnailUrl = uploadResult.url;
+          thumbnailSource = 'hive';
+          console.log(`✅ Thumbnail uploaded to Hive: ${thumbnailUrl}`);
+        } else {
+          // IPFS upload (fallback)
+          thumbnailCid = uploadResult.hash;
+          thumbnailSource = 'ipfs';
+          console.log(`✅ Thumbnail uploaded to IPFS: ${thumbnailCid}`);
+        }
       }
 
       // Create video document
       const Video = getVideoModel();
       // Thumbnail fallback logic:
-      // - Prefer uploaded thumbnailCid
+      // - Prefer Hive URL (if available)
+      // - Else use uploaded IPFS CID
       // - Else, use DEFAULT_THUMBNAIL env var (can be either a full ipfs:// URI or a raw CID)
       // - Else, fallback to empty string (legacy expects a string, not null)
       const DEFAULT_THUMBNAIL = process.env.DEFAULT_THUMBNAIL || '';
       let thumbnailValue = '';
-      if (thumbnailCid) {
+      
+      if (thumbnailUrl) {
+        // Hive URL - store as-is (not an ipfs:// URI)
+        thumbnailValue = thumbnailUrl;
+      } else if (thumbnailCid) {
+        // IPFS CID - use ipfs:// prefix
         thumbnailValue = `ipfs://${thumbnailCid}`;
       } else if (DEFAULT_THUMBNAIL) {
         // If env value already contains ipfs:// prefix, keep it; otherwise prepend
@@ -962,24 +992,26 @@ router.post('/finalize',
       }
 
       // Handle thumbnail upload (file or base64)
-      let thumbnailCid = null;
+      let thumbnailUrl = null;
       if (req.file) {
         console.log(`🖼️ Uploading thumbnail file: ${req.file.originalname}`);
         const uploadResult = await ipfsService.uploadThumbnail(req.file.path);
-        thumbnailCid = uploadResult.hash;
+        // Support both Hive URLs (url field) and IPFS hashes (hash field)
+        thumbnailUrl = uploadResult.url || (uploadResult.hash ? `ipfs://${uploadResult.hash}` : null);
         fs.unlinkSync(req.file.path);
       } else if (thumbnail_base64) {
         console.log('🖼️ Uploading base64 thumbnail');
         const uploadResult = await ipfsService.uploadThumbnailBase64(thumbnail_base64);
-        thumbnailCid = uploadResult.hash;
+        // Support both Hive URLs (url field) and IPFS hashes (hash field)
+        thumbnailUrl = uploadResult.url || (uploadResult.hash ? `ipfs://${uploadResult.hash}` : null);
       }
 
       // Create video document
       const Video = getVideoModel();
       const DEFAULT_THUMBNAIL = process.env.DEFAULT_THUMBNAIL || '';
       let thumbnailValue = '';
-      if (thumbnailCid) {
-        thumbnailValue = `ipfs://${thumbnailCid}`;
+      if (thumbnailUrl) {
+        thumbnailValue = thumbnailUrl;
       } else if (DEFAULT_THUMBNAIL) {
         thumbnailValue = DEFAULT_THUMBNAIL.startsWith('ipfs://')
           ? DEFAULT_THUMBNAIL
@@ -1403,12 +1435,25 @@ router.post('/thumbnail/:video_id',
 
       console.log(`🖼️ Uploading thumbnail for video: ${video_id}`);
       
-      // Upload to IPFS supernode
+      // Upload with Hive → IPFS fallback
       const uploadResult = await ipfsService.uploadThumbnail(req.file.path);
-      const thumbnailCid = uploadResult.hash;
-      const thumbnailUri = `ipfs://${thumbnailCid}`;
       
-      console.log(`✅ Thumbnail uploaded: ${thumbnailUri}`);
+      let thumbnailUri;
+      let thumbnailDisplayUrl;
+      let ipfsHash = null;
+      
+      if (uploadResult.source === 'hive') {
+        // Hive URL - store as-is
+        thumbnailUri = uploadResult.url;
+        thumbnailDisplayUrl = uploadResult.url;
+        console.log(`✅ Thumbnail uploaded to Hive: ${thumbnailUri}`);
+      } else {
+        // IPFS - use ipfs:// format
+        ipfsHash = uploadResult.hash;
+        thumbnailUri = `ipfs://${ipfsHash}`;
+        thumbnailDisplayUrl = uploadResult.gatewayUrl;
+        console.log(`✅ Thumbnail uploaded to IPFS: ${thumbnailUri}`);
+      }
       
       // Update video document
       const Video = getVideoModel();
@@ -1442,8 +1487,9 @@ router.post('/thumbnail/:video_id',
           owner: video.owner,
           permlink: video.permlink,
           thumbnail: thumbnailUri,
-          thumbnail_url: thumbnailUri, // Frontend expects this
-          ipfs_hash: thumbnailCid
+          thumbnail_url: thumbnailDisplayUrl, // Displayable URL (Hive or IPFS gateway)
+          ipfs_hash: ipfsHash, // null if Hive
+          source: uploadResult.source // 'hive' or 'ipfs'
         }
       });
       

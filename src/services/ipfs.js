@@ -2,6 +2,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
+const hiveImageService = require('./hive-image');
 
 class IPFSService {
   constructor() {
@@ -272,43 +273,106 @@ class IPFSService {
   }
 
   /**
-   * Upload thumbnail image
+   * Upload thumbnail image with Hive → IPFS fallback strategy
    * @param {string} filePath - Path to thumbnail file
-   * @returns {Promise<{hash: string, fallbackMode: boolean, gatewayUrl: string}>}
+   * @returns {Promise<{hash: string, url: string, source: string, fallbackMode: boolean, gatewayUrl: string}>}
    */
   async uploadThumbnail(filePath) {
-    return this.uploadFile(filePath);
+    return this._uploadThumbnailWithFallback(async () => {
+      // For file uploads, pass the file path
+      return { filePath };
+    });
   }
 
   /**
-   * Upload base64 thumbnail
+   * Upload base64 thumbnail with Hive → IPFS fallback strategy
    * @param {string} base64Data - Base64 encoded image data (with data:image/... prefix)
-   * @returns {Promise<{hash: string, fallbackMode: boolean, gatewayUrl: string}>}
+   * @returns {Promise<{hash: string, url: string, source: string, fallbackMode: boolean, gatewayUrl: string}>}
    */
   async uploadThumbnailBase64(base64Data) {
-    // Parse base64 data
-    const matches = base64Data.match(/^data:image\/([a-z]+);base64,(.+)$/);
-    if (!matches) {
-      throw new Error('Invalid base64 image data format');
+    return this._uploadThumbnailWithFallback(async () => {
+      // For base64, we need to pass the base64 data
+      return { base64Data };
+    });
+  }
+
+  /**
+   * Unified thumbnail upload with Hive → IPFS fallback
+   * @private
+   * @param {Function} dataProvider - Async function that returns {filePath} or {base64Data}
+   * @returns {Promise<{hash: string, url: string, source: string, fallbackMode: boolean, gatewayUrl: string}>}
+   */
+  async _uploadThumbnailWithFallback(dataProvider) {
+    const data = await dataProvider();
+    
+    // Strategy 1: Try Hive first (if enabled)
+    if (hiveImageService.isEnabled()) {
+      try {
+        console.log('🎯 Attempting Hive image upload (primary)...');
+        let hiveResult;
+        
+        if (data.filePath) {
+          hiveResult = await hiveImageService.uploadFile(data.filePath);
+        } else if (data.base64Data) {
+          hiveResult = await hiveImageService.uploadBase64(data.base64Data);
+        }
+        
+        if (hiveResult && hiveResult.success) {
+          console.log(`✅ Hive upload successful: ${hiveResult.url}`);
+          return {
+            hash: null, // Hive doesn't use IPFS hashes
+            url: hiveResult.url,
+            source: 'hive',
+            fallbackMode: false,
+            gatewayUrl: hiveResult.url
+          };
+        }
+      } catch (hiveError) {
+        console.warn(`⚠️ Hive upload failed, falling back to IPFS: ${hiveError.message}`);
+      }
+    } else {
+      console.log('ℹ️ Hive upload not available, using IPFS directly');
     }
     
-    const [, extension, data] = matches;
-    const buffer = Buffer.from(data, 'base64');
+    // Strategy 2: Fallback to IPFS
+    console.log('🔄 Uploading to IPFS (fallback)...');
+    let ipfsResult;
     
-    // Create temporary file
-    const tempDir = '/tmp';
-    const tempFile = path.join(tempDir, `thumb_${Date.now()}.${extension}`);
-    
-    try {
-      fs.writeFileSync(tempFile, buffer);
-      const result = await this.uploadFile(tempFile);
-      return result;
-    } finally {
-      // Clean up temp file
-      if (fs.existsSync(tempFile)) {
-        fs.unlinkSync(tempFile);
+    if (data.filePath) {
+      ipfsResult = await this.uploadFile(data.filePath);
+    } else if (data.base64Data) {
+      // Handle base64 for IPFS
+      const matches = data.base64Data.match(/^data:image\/([a-z]+);base64,(.+)$/);
+      if (!matches) {
+        throw new Error('Invalid base64 image data format');
+      }
+      
+      const [, extension, encodedData] = matches;
+      const buffer = Buffer.from(encodedData, 'base64');
+      
+      // Create temporary file
+      const tempDir = '/tmp';
+      const tempFile = path.join(tempDir, `thumb_${Date.now()}.${extension}`);
+      
+      try {
+        fs.writeFileSync(tempFile, buffer);
+        ipfsResult = await this.uploadFile(tempFile);
+      } finally {
+        // Clean up temp file
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+        }
       }
     }
+    
+    console.log(`✅ IPFS upload successful: ${ipfsResult.hash}`);
+    return {
+      hash: ipfsResult.hash,
+      url: null,
+      source: 'ipfs',
+      fallbackMode: ipfsResult.fallbackMode,
+      gatewayUrl: ipfsResult.gatewayUrl
+    };
   }
 
   /**

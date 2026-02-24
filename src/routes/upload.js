@@ -839,6 +839,10 @@ router.post('/finalize',
       .optional()
       .isBoolean()
       .withMessage('rewardPowerup must be boolean'),
+    body('reusable')
+      .optional()
+      .isBoolean()
+      .withMessage('reusable must be boolean'),
     body('publish_type')
       .optional()
       .isIn(['publish', 'schedule'])
@@ -875,7 +879,8 @@ router.post('/finalize',
         votePercent = 1,
         thumbnail_base64,
         publish_type = 'publish',
-        publish_data
+        publish_data,
+        reusable = false
       } = req.body;
 
       console.log(`🏁 Finalizing upload: ${upload_id}`);
@@ -1039,6 +1044,7 @@ router.post('/finalize',
         beneficiaries: JSON.stringify(beneficiaries || []), // Must be JSON string for legacy compatibility
         declineRewards,
         rewardPowerup,
+        reusable: reusable !== false,
         fromMobile: false,
         app: app || null,
         local_filename: tempUpload.tus_file_path,

@@ -183,11 +183,15 @@ const videoSchema = new mongoose.Schema({
     type: Boolean, 
     default: false 
   }, // Always false for this service
-  firstUpload: { 
-    type: Boolean, 
-    default: false 
+  firstUpload: {
+    type: Boolean,
+    default: false
   },
-  
+  reusable: {
+    type: Boolean,
+    default: false
+  },
+
   // ============================================
   // TIMESTAMPS
   // ============================================

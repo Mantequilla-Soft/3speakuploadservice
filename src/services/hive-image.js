@@ -173,10 +173,16 @@ class HiveImageService {
         throw new Error(`Invalid response from Hive: ${JSON.stringify(response.data)}`);
       }
     } catch (error) {
-      // Enhanced error logging
       if (error.response) {
-        console.error(`❌ Hive API error (${error.response.status}):`, error.response.data);
-        throw new Error(`Hive API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        const status = error.response.status;
+        const responseData = error.response.data;
+        // Avoid dumping HTML error pages (e.g. Cloudflare 521) into logs
+        const isHtml = typeof responseData === 'string' && responseData.trimStart().startsWith('<');
+        const logDetail = isHtml ? '[HTML response — likely CDN/proxy error page]' : responseData;
+        console.error(`❌ Hive API error (${status}):`, logDetail);
+        const err = new Error(`Hive API error: ${status}`);
+        err.status = status;
+        throw err;
       } else if (error.request) {
         throw new Error(`Network error: ${error.message}`);
       } else {
@@ -218,8 +224,16 @@ class HiveImageService {
         return result;
       } catch (error) {
         lastError = error;
-        console.error(`❌ Hive upload attempt ${attempt}/${this.maxRetries + 1} failed:`, error.message);
-        
+
+        // Cloudflare 52x errors (521=server down, 522=timeout, 523=unreachable, etc.)
+        // mean the origin is completely unavailable — retrying immediately is pointless
+        if (error.status && error.status >= 520 && error.status < 530) {
+          console.error(`❌ Hive server unavailable (${error.status}), skipping retries`);
+          break;
+        }
+
+        console.error(`❌ Hive upload attempt ${attempt}/${this.maxRetries + 1} failed: ${error.message}`);
+
         if (attempt <= this.maxRetries) {
           const backoffMs = Math.pow(2, attempt - 1) * 1000; // Exponential backoff
           console.log(`⏳ Retrying in ${backoffMs}ms...`);

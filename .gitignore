@@ -152,3 +152,4 @@ nginx-cors-config.txt
 
 # Internal documentation (not for public repo)
 API_INTEGRATION_ISSUE.md
+/internal-docs/

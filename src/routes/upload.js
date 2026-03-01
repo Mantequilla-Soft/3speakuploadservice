@@ -408,32 +408,32 @@ router.post('/prepare',
       if (req.file) {
         console.log(`🖼️ Uploading thumbnail file: ${req.file.originalname}`);
         const uploadResult = await ipfsService.uploadThumbnail(req.file.path);
-        
-        if (uploadResult.source === 'hive') {
-          // Hive upload successful
+
+        if (uploadResult.source === 'hive' || uploadResult.source === '3speak') {
+          // Direct URL upload successful (Hive or 3Speak)
           thumbnailUrl = uploadResult.url;
-          thumbnailSource = 'hive';
-          console.log(`✅ Thumbnail uploaded to Hive: ${thumbnailUrl}`);
+          thumbnailSource = uploadResult.source;
+          console.log(`✅ Thumbnail uploaded to ${uploadResult.source}: ${thumbnailUrl}`);
         } else {
-          // IPFS upload (fallback)
+          // IPFS upload (final fallback)
           thumbnailCid = uploadResult.hash;
           thumbnailSource = 'ipfs';
           console.log(`✅ Thumbnail uploaded to IPFS: ${thumbnailCid}`);
         }
-        
+
         // Clean up temp file
         fs.unlinkSync(req.file.path);
       } else if (thumbnail_base64) {
         console.log('🖼️ Uploading base64 thumbnail');
         const uploadResult = await ipfsService.uploadThumbnailBase64(thumbnail_base64);
-        
-        if (uploadResult.source === 'hive') {
-          // Hive upload successful
+
+        if (uploadResult.source === 'hive' || uploadResult.source === '3speak') {
+          // Direct URL upload successful (Hive or 3Speak)
           thumbnailUrl = uploadResult.url;
-          thumbnailSource = 'hive';
-          console.log(`✅ Thumbnail uploaded to Hive: ${thumbnailUrl}`);
+          thumbnailSource = uploadResult.source;
+          console.log(`✅ Thumbnail uploaded to ${uploadResult.source}: ${thumbnailUrl}`);
         } else {
-          // IPFS upload (fallback)
+          // IPFS upload (final fallback)
           thumbnailCid = uploadResult.hash;
           thumbnailSource = 'ipfs';
           console.log(`✅ Thumbnail uploaded to IPFS: ${thumbnailCid}`);
@@ -443,7 +443,7 @@ router.post('/prepare',
       // Create video document
       const Video = getVideoModel();
       // Thumbnail fallback logic:
-      // - Prefer Hive URL (if available)
+      // - Prefer Hive/3Speak URL (if available)
       // - Else use uploaded IPFS CID
       // - Else, use DEFAULT_THUMBNAIL env var (can be either a full ipfs:// URI or a raw CID)
       // - Else, fallback to empty string (legacy expects a string, not null)
@@ -1441,18 +1441,18 @@ router.post('/thumbnail/:video_id',
 
       console.log(`🖼️ Uploading thumbnail for video: ${video_id}`);
       
-      // Upload with Hive → IPFS fallback
+      // Upload with Hive → 3Speak → IPFS fallback
       const uploadResult = await ipfsService.uploadThumbnail(req.file.path);
-      
+
       let thumbnailUri;
       let thumbnailDisplayUrl;
       let ipfsHash = null;
-      
-      if (uploadResult.source === 'hive') {
-        // Hive URL - store as-is
+
+      if (uploadResult.source === 'hive' || uploadResult.source === '3speak') {
+        // Direct URL (Hive or 3Speak) - store as-is
         thumbnailUri = uploadResult.url;
         thumbnailDisplayUrl = uploadResult.url;
-        console.log(`✅ Thumbnail uploaded to Hive: ${thumbnailUri}`);
+        console.log(`✅ Thumbnail uploaded to ${uploadResult.source}: ${thumbnailUri}`);
       } else {
         // IPFS - use ipfs:// format
         ipfsHash = uploadResult.hash;
@@ -1495,7 +1495,7 @@ router.post('/thumbnail/:video_id',
           thumbnail: thumbnailUri,
           thumbnail_url: thumbnailDisplayUrl, // Displayable URL (Hive or IPFS gateway)
           ipfs_hash: ipfsHash, // null if Hive
-          source: uploadResult.source // 'hive' or 'ipfs'
+          source: uploadResult.source // 'hive', '3speak', or 'ipfs'
         }
       });
       

@@ -3,6 +3,7 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const hiveImageService = require('./hive-image');
+const threeSpeakImageService = require('./threespeak-image');
 
 class IPFSService {
   constructor() {
@@ -297,7 +298,7 @@ class IPFSService {
   }
 
   /**
-   * Unified thumbnail upload with Hive → IPFS fallback
+   * Unified thumbnail upload with Hive → 3Speak → IPFS fallback
    * @private
    * @param {Function} dataProvider - Async function that returns {filePath} or {base64Data}
    * @returns {Promise<{hash: string, url: string, source: string, fallbackMode: boolean, gatewayUrl: string}>}
@@ -328,14 +329,43 @@ class IPFSService {
           };
         }
       } catch (hiveError) {
-        console.warn(`⚠️ Hive upload failed, falling back to IPFS: ${hiveError.message}`);
+        console.warn(`⚠️ Hive upload failed, trying 3Speak fallback: ${hiveError.message}`);
       }
     } else {
-      console.log('ℹ️ Hive upload not available, using IPFS directly');
+      console.log('ℹ️ Hive upload not available, trying 3Speak');
     }
     
-    // Strategy 2: Fallback to IPFS
-    console.log('🔄 Uploading to IPFS (fallback)...');
+    // Strategy 2: Try 3Speak image server (middle fallback)
+    if (threeSpeakImageService.isEnabled()) {
+      try {
+        console.log('🎯 Attempting 3Speak image upload (secondary)...');
+        let threeSpeakUrl;
+        
+        if (data.filePath) {
+          threeSpeakUrl = await threeSpeakImageService.uploadFile(data.filePath);
+        } else if (data.base64Data) {
+          threeSpeakUrl = await threeSpeakImageService.uploadBase64(data.base64Data);
+        }
+        
+        if (threeSpeakUrl) {
+          console.log(`✅ 3Speak upload successful: ${threeSpeakUrl}`);
+          return {
+            hash: null, // 3Speak returns direct URLs, not IPFS hashes
+            url: threeSpeakUrl,
+            source: '3speak',
+            fallbackMode: false,
+            gatewayUrl: threeSpeakUrl
+          };
+        }
+      } catch (threeSpeakError) {
+        console.warn(`⚠️ 3Speak upload failed, falling back to IPFS: ${threeSpeakError.message}`);
+      }
+    } else {
+      console.log('ℹ️ 3Speak upload not available, using IPFS');
+    }
+    
+    // Strategy 3: Fallback to IPFS (last resort)
+    console.log('🔄 Uploading to IPFS (final fallback)...');
     let ipfsResult;
     
     if (data.filePath) {

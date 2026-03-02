@@ -128,11 +128,18 @@ class ThreeSpeakImageService {
         throw new Error(`File too large: ${stats.size} bytes (max: ${this.maxFileSize})`);
       }
 
-      console.log(`📤 Uploading to 3Speak: ${path.basename(filePath)} (${stats.size} bytes)`);
+      // Detect content type from extension; default to image/jpeg for extensionless
+      // files (e.g. multer temp uploads which have no extension)
+      const ext = path.extname(filePath).toLowerCase().slice(1);
+      const contentTypeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
+      const contentType = contentTypeMap[ext] || 'image/jpeg';
+      const uploadFilename = ext ? path.basename(filePath) : path.basename(filePath) + '.jpg';
 
-      // Create form data
+      console.log(`📤 Uploading to 3Speak: ${uploadFilename} (${stats.size} bytes, ${contentType})`);
+
+      // Create form data with explicit content type so the server can identify the image format
       const form = new FormData();
-      form.append('image', fs.createReadStream(filePath));
+      form.append('image', fs.createReadStream(filePath), { filename: uploadFilename, contentType });
 
       // Make upload request with retry logic
       let lastError;
@@ -170,7 +177,8 @@ class ThreeSpeakImageService {
             code: error.code,
             hasResponse: !!error.response,
             status: error.response?.status,
-            statusText: error.response?.statusText
+            statusText: error.response?.statusText,
+            data: error.response?.data
           });
           
           // Don't retry on client errors (400, 401, 403, 413)
@@ -195,6 +203,11 @@ class ThreeSpeakImageService {
 
     } catch (error) {
       this._recordFailure();
+      // If already processed by _createDetailedError (has numeric .status), don't re-wrap
+      if (typeof error.status === 'number') {
+        console.error(`❌ 3Speak upload failed: ${error.message}`);
+        throw error;
+      }
       const detailedError = this._createDetailedError(error);
       console.error(`❌ 3Speak upload failed: ${detailedError.message}`);
       throw detailedError;

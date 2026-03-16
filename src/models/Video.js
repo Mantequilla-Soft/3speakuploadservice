@@ -15,13 +15,14 @@ const videoSchema = new mongoose.Schema({
     index: true,
     match: /^[a-z0-9.-]+$/
   },
-  permlink: { 
-    type: String, 
-    required: true, 
+  permlink: {
+    type: String,
+    required: true,
     unique: true,
     index: true,
-    minlength: 8,
-    maxlength: 8
+    minlength: 3,
+    maxlength: 255,
+    match: /^[a-z0-9-]+$/
   },
   
   // ============================================

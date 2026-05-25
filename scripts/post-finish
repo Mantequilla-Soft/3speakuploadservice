@@ -6,20 +6,29 @@
 # Configuration
 CALLBACK_URL="http://localhost:8080/api/upload/tus-callback"
 TIMEOUT=600
-UPLOAD_DIR="/var/uploads/3speak"
+UPLOAD_DIR="${TUS_UPLOAD_DIR:-/var/uploads/3speak}"
 
 # Log function
 log_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
 }
 
-# Validate TUS environment variables
+# Validate required environment variables
 if [[ -z "$TUS_ID" ]]; then
     log_message "ERROR: TUS_ID not provided"
     exit 1
 fi
 
+if [[ -z "$UPLOAD_SECRET_TOKEN" ]]; then
+    log_message "ERROR: UPLOAD_SECRET_TOKEN not set"
+    exit 1
+fi
+
 log_message "Processing upload completion for ID: $TUS_ID"
+
+# Create unique temp file for response and clean up on exit
+RESPONSE_FILE=$(mktemp /tmp/tus_callback_response.XXXXXX)
+trap "rm -f '$RESPONSE_FILE'" EXIT
 
 # Check if this is a partial upload chunk (from parallel/chunked uploads)
 INFO_FILE="$UPLOAD_DIR/${TUS_ID}.info"
@@ -28,12 +37,12 @@ if [[ -f "$INFO_FILE" ]]; then
     # Check if this is a partial upload by looking at the info file
     IS_PARTIAL=$(grep -o '"IsPartial":[^,}]*' "$INFO_FILE" 2>/dev/null | cut -d':' -f2)
     IS_FINAL=$(grep -o '"IsFinal":[^,}]*' "$INFO_FILE" 2>/dev/null | cut -d':' -f2)
-    
+
     if [[ "$IS_PARTIAL" == "true" ]]; then
         log_message "SKIP: This is a partial upload chunk (will be processed when final upload completes)"
         exit 0
     fi
-    
+
     log_message "Upload type - IsPartial: $IS_PARTIAL, IsFinal: $IS_FINAL"
 else
     log_message "WARNING: No TUS info file found at $INFO_FILE"
@@ -60,14 +69,14 @@ log_message "File size: $FILE_SIZE bytes"
 # Extract metadata from info file
 if [[ -f "$INFO_FILE" ]]; then
     log_message "Found TUS info file: $INFO_FILE"
-    # Extract metadata from info file if it exists
     VIDEO_ID=$(grep -o '"video_id":"[^"]*"' "$INFO_FILE" 2>/dev/null | cut -d'"' -f4)
     UPLOAD_ID=$(grep -o '"upload_id":"[^"]*"' "$INFO_FILE" 2>/dev/null | cut -d'"' -f4)
     FILENAME=$(grep -o '"filename":"[^"]*"' "$INFO_FILE" 2>/dev/null | cut -d'"' -f4)
-    
+
     # Clean up "undefined" string values (JavaScript sends these)
     [[ "$VIDEO_ID" == "undefined" ]] && VIDEO_ID=""
     [[ "$UPLOAD_ID" == "undefined" ]] && UPLOAD_ID=""
+    [[ "$FILENAME" == "undefined" ]] && FILENAME="upload.mp4"
 else
     VIDEO_ID=""
     UPLOAD_ID=""
@@ -79,13 +88,11 @@ log_message "Extracted metadata - Video ID: $VIDEO_ID, Upload ID: $UPLOAD_ID, Fi
 # Get additional metadata by looking up video in database via API
 if [[ -n "$VIDEO_ID" ]]; then
     log_message "Looking up video metadata for: $VIDEO_ID"
-    
-    # Call our own API to get video details
+
     VIDEO_INFO=$(curl -s -X GET "http://localhost:8080/api/upload/video/$VIDEO_ID/status" \
-        -H "Authorization: Bearer gJTe63FNQ7a" 2>/dev/null)
-    
+        -H "Authorization: Bearer $UPLOAD_SECRET_TOKEN" 2>/dev/null)
+
     if [[ $? -eq 0 && -n "$VIDEO_INFO" ]]; then
-        # Extract owner and permlink from the response
         OWNER=$(echo "$VIDEO_INFO" | grep -o '"owner":"[^"]*"' | cut -d'"' -f4)
         PERMLINK=$(echo "$VIDEO_INFO" | grep -o '"permlink":"[^"]*"' | cut -d'"' -f4)
         log_message "Found metadata - Owner: $OWNER, Permlink: $PERMLINK"
@@ -96,35 +103,39 @@ if [[ -n "$VIDEO_ID" ]]; then
     fi
 else
     log_message "WARNING: No video_id provided, using defaults"
-    OWNER="unknown" 
+    OWNER="unknown"
     PERMLINK="unknown"
 fi
 
-# Prepare callback payload
-UPLOAD_DATA=$(cat <<EOF
-{
-  "Upload": {
-    "ID": "$TUS_ID",
-    "Storage": {
-      "Path": "$TUS_FILE"
-    },
-    "MetaData": {
-      "video_id": "$VIDEO_ID",
-      "upload_id": "$UPLOAD_ID",
-      "owner": "$OWNER",
-      "permlink": "$PERMLINK",
-      "filename": "$FILENAME"
-    },
-    "SizeBytes": $FILE_SIZE
-  }
-}
-EOF
-)
+# Prepare callback payload using jq for safe JSON encoding
+UPLOAD_DATA=$(jq -n \
+  --arg tus_id "$TUS_ID" \
+  --arg tus_file "$TUS_FILE" \
+  --arg video_id "$VIDEO_ID" \
+  --arg upload_id "$UPLOAD_ID" \
+  --arg owner "$OWNER" \
+  --arg permlink "$PERMLINK" \
+  --arg filename "$FILENAME" \
+  --argjson size "$FILE_SIZE" \
+  '{
+    Upload: {
+      ID: $tus_id,
+      Storage: { Path: $tus_file },
+      MetaData: {
+        video_id: $video_id,
+        upload_id: $upload_id,
+        owner: $owner,
+        permlink: $permlink,
+        filename: $filename
+      },
+      SizeBytes: $size
+    }
+  }')
 
 # Send callback to upload service
 log_message "Sending callback to: $CALLBACK_URL"
 
-HTTP_STATUS=$(curl -w "%{http_code}" -o /tmp/tus_callback_response.txt \
+HTTP_STATUS=$(curl -w "%{http_code}" -o "$RESPONSE_FILE" \
   --max-time "$TIMEOUT" \
   --retry 3 \
   --retry-delay 2 \
@@ -137,28 +148,20 @@ CURL_EXIT_CODE=$?
 
 if [[ $CURL_EXIT_CODE -eq 0 && "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]]; then
     log_message "SUCCESS: Callback sent successfully (HTTP $HTTP_STATUS)"
-    
-    # Log response if needed
-    if [[ -s /tmp/tus_callback_response.txt ]]; then
-        RESPONSE_BODY=$(cat /tmp/tus_callback_response.txt)
+
+    if [[ -s "$RESPONSE_FILE" ]]; then
+        RESPONSE_BODY=$(cat "$RESPONSE_FILE")
         log_message "Response: $RESPONSE_BODY"
     fi
-    
-    # Cleanup response file
-    rm -f /tmp/tus_callback_response.txt
-    
+
     exit 0
 else
     log_message "ERROR: Callback failed (curl exit: $CURL_EXIT_CODE, HTTP: $HTTP_STATUS)"
-    
-    # Log error response
-    if [[ -s /tmp/tus_callback_response.txt ]]; then
-        ERROR_RESPONSE=$(cat /tmp/tus_callback_response.txt)
+
+    if [[ -s "$RESPONSE_FILE" ]]; then
+        ERROR_RESPONSE=$(cat "$RESPONSE_FILE")
         log_message "Error response: $ERROR_RESPONSE"
     fi
-    
-    # Cleanup response file
-    rm -f /tmp/tus_callback_response.txt
-    
+
     exit 1
 fi

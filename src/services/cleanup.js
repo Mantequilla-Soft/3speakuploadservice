@@ -279,12 +279,8 @@ class CleanupService {
     try {
       const TempUpload = require('../models/TempUpload')();
       const orphaned = await TempUpload.findOrphaned();
-      
+
       console.log(`🔍 Found ${orphaned.length} orphaned uploads to clean`);
-      
-      if (orphaned.length === 0) {
-        return { cleaned: 0, errors: 0, total: 0 };
-      }
 
       let cleaned = 0;
       let errors = 0;
@@ -292,16 +288,17 @@ class CleanupService {
 
       for (const upload of orphaned) {
         try {
-          // Delete temp file if exists
           if (upload.tus_file_path && fs.existsSync(upload.tus_file_path)) {
             fs.unlinkSync(upload.tus_file_path);
+            // Also remove the companion .info file
+            const infoPath = upload.tus_file_path + '.info';
+            if (fs.existsSync(infoPath)) fs.unlinkSync(infoPath);
             console.log(`🗑️ Deleted orphaned file: ${upload.tus_file_path}`);
           }
-          
-          // Delete database entry
+
           await TempUpload.deleteOne({ _id: upload._id });
           cleaned++;
-          
+
           console.log(`✅ Cleaned orphaned upload: ${upload.upload_id} (${upload.owner})`);
         } catch (error) {
           console.error(`❌ Failed to clean upload ${upload.upload_id}:`, error.message);
@@ -309,13 +306,72 @@ class CleanupService {
         }
       }
 
+      // Sweep the TUS upload directory for stale files with no active session.
+      // This catches files from: failed traditional-TUS uploads, partial uploads
+      // whose TempUpload record was already deleted, and pre-existing legacy files.
+      const tusDir = process.env.TUS_UPLOAD_DIR || '/var/uploads/3speak';
+      const staleTusResult = await this._cleanStaleTusFiles(tusDir, fs);
+      cleaned += staleTusResult.cleaned;
+      errors  += staleTusResult.errors;
+
       console.log(`✅ Orphaned upload cleanup: ${cleaned} cleaned, ${errors} errors`);
-      
-      return { cleaned, errors, total: orphaned.length };
+
+      return { cleaned, errors, total: orphaned.length + staleTusResult.total };
     } catch (error) {
       console.error('❌ Orphaned upload cleanup error:', error);
       throw error;
     }
+  }
+
+  /**
+   * Delete TUS files (upload + .info) from tusDir that have not been touched
+   * in the last 24 hours and are not referenced by any non-finalized TempUpload.
+   * @private
+   */
+  async _cleanStaleTusFiles(tusDir, fs) {
+    const result = { cleaned: 0, errors: 0, total: 0 };
+    try {
+      if (!fs.existsSync(tusDir)) return result;
+
+      const TempUpload = require('../models/TempUpload')();
+      // TempUpload records expire after 4 hours, so anything older than 6 hours
+      // in the upload directory is guaranteed to have no active session.
+      const cutoff = Date.now() - 6 * 60 * 60 * 1000; // 6 hours ago
+
+      // Build set of TUS IDs still referenced by active (non-finalized) TempUploads
+      const active = await TempUpload.find({ finalized: false }).select('tus_file_path');
+      const activePaths = new Set(active.map(u => u.tus_file_path).filter(Boolean));
+
+      const entries = fs.readdirSync(tusDir);
+      // Only look at data files (no .info extension)
+      const dataFiles = entries.filter(e => !e.endsWith('.info'));
+
+      for (const name of dataFiles) {
+        const filePath = require('path').join(tusDir, name);
+        try {
+          const stat = fs.statSync(filePath);
+          if (stat.mtimeMs > cutoff) continue; // recently modified — skip
+          if (activePaths.has(filePath)) continue; // still needed — skip
+
+          result.total++;
+          fs.unlinkSync(filePath);
+          const infoPath = filePath + '.info';
+          if (fs.existsSync(infoPath)) fs.unlinkSync(infoPath);
+          result.cleaned++;
+          console.log(`🗑️ Swept stale TUS file: ${name}`);
+        } catch (err) {
+          console.error(`❌ Failed to sweep TUS file ${name}: ${err.message}`);
+          result.errors++;
+        }
+      }
+
+      if (result.total > 0) {
+        console.log(`🧹 Stale TUS sweep: ${result.cleaned}/${result.total} files removed`);
+      }
+    } catch (err) {
+      console.error('❌ Stale TUS sweep error:', err.message);
+    }
+    return result;
   }
 
   /**

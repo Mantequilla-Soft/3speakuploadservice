@@ -465,6 +465,13 @@ class IPFSService {
       console.log(`📌 Unpinned from fallback: ${hash}`);
       return true;
     } catch (error) {
+      // IPFS returns 500 with "not pinned" when the hash was already removed or
+      // never pinned locally — treat this as success since the goal is achieved.
+      const msg = error.response?.data?.Message || error.message || '';
+      if (msg.includes('not pinned')) {
+        console.log(`📌 Already unpinned (not in local pinset): ${hash}`);
+        return true;
+      }
       console.error(`Failed to unpin ${hash}: ${error.message}`);
       return false;
     }

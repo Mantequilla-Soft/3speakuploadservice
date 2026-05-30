@@ -1356,12 +1356,16 @@ router.get('/health', async (req, res) => {
 router.post('/cleanup', requireAuth, async (req, res) => {
   try {
     console.log('🧹 Manual cleanup triggered');
-    const result = await cleanupService.performCleanup();
-    
+    const [ipfsResult, tusResult] = await Promise.all([
+      cleanupService.performCleanup(),
+      cleanupService.cleanupOrphanedUploads()
+    ]);
+
     res.json({
       success: true,
       message: 'Cleanup completed',
-      result
+      result: ipfsResult,
+      tus_cleanup: tusResult
     });
   } catch (error) {
     console.error('❌ Manual cleanup error:', error);

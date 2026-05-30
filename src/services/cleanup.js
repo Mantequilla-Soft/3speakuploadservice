@@ -200,7 +200,14 @@ class CleanupService {
       };
 
       console.log(`✅ Cleanup complete: ${cleaned} cleaned, ${errors} errors`);
-      
+
+      // Run GC after unpinning to actually reclaim disk space
+      if (cleaned > 0) {
+        ipfsService.runGarbageCollection().catch(err => {
+          console.warn(`⚠️ Post-cleanup GC failed: ${err.message}`);
+        });
+      }
+
       return summary;
     } catch (error) {
       console.error('❌ Cleanup service error:', error);
@@ -222,7 +229,7 @@ class CleanupService {
       status: { $in: ['encoding_ipfs', 'encoding_ready', 'published'] }, // Encoding started or complete
       created: { $lt: cutoffDate },  // Older than retention period (24h for raw files)
       cleanup_eligible: { $ne: true } // Not already cleaned
-    }).select('_id owner permlink filename fallback_mode created status size');
+    }).select('_id owner permlink filename fallback_mode created status size').limit(200);
   }
 
   /**
@@ -233,12 +240,15 @@ class CleanupService {
   async cleanupVideo(video) {
     try {
       console.log(`🗑️ Cleaning up video: ${video.owner}/${video.permlink}`);
-      
-      // Extract IPFS hash from filename (format: "ipfs://hash")
+
+      // Videos without an IPFS filename have nothing to unpin — mark done and move on
       if (!video.filename || !video.filename.startsWith('ipfs://')) {
-        throw new Error('Invalid filename format for cleanup');
+        video.cleanup_eligible = true;
+        await video.save();
+        console.log(`⏭️ Skipped (no IPFS hash): ${video.owner}/${video.permlink}`);
+        return { success: true, ipfsHash: null, skipped: true };
       }
-      
+
       const ipfsHash = video.filename.replace('ipfs://', '');
       
       // Unpin from local IPFS

@@ -40,7 +40,9 @@ class IPFSService {
       });
       
       // Background sync to supernode (fire and forget - not critical path)
-      this._syncToSupernodeBackground(filePath, result.hash).catch(err => {
+      // Passes only the hash so the supernode fetches via DHT — avoids race
+      // condition where filePath is deleted before re-upload can read it.
+      this._syncToSupernodeBackground(result.hash).catch(err => {
         console.warn(`⚠️ Background supernode sync failed (non-critical): ${err.message}`);
       });
       
@@ -114,24 +116,22 @@ class IPFSService {
 
   /**
    * Background sync to supernode (non-blocking)
+   * Tells the supernode to fetch and pin the content from DHT by CID.
+   * This avoids the race condition where the file is deleted before
+   * a file-based re-upload could read it.
    * @private
    */
-  async _syncToSupernodeBackground(filePath, expectedHash) {
-    console.log(`🔄 Background: Syncing ${expectedHash} to supernode...`);
+  async _syncToSupernodeBackground(hash) {
+    console.log(`🔄 Background: Pinning ${hash} on supernode via DHT...`);
     try {
-      const result = await this._uploadToSupernode(filePath);
-      if (result.hash === expectedHash) {
-        console.log(`✅ Background: Supernode sync complete for ${expectedHash}`);
-        // Announce on supernode too
-        this._announceToSupernodeDHT(expectedHash).catch(err => {
-          console.warn(`⚠️ Background supernode DHT announcement failed: ${err.message}`);
-        });
-      } else {
-        console.warn(`⚠️ Background: Hash mismatch! Local: ${expectedHash}, Supernode: ${result.hash}`);
-      }
+      await axios.post(`${this.supernodeUrl}/api/v0/pin/add`, null, {
+        params: { arg: hash, recursive: true },
+        timeout: 300000 // 5 minutes — supernode fetches from DHT
+      });
+      console.log(`✅ Background: Supernode pinned ${hash}`);
     } catch (error) {
-      console.error(`❌ Background: Supernode sync failed for ${expectedHash}:`, error.message);
-      // Don't throw - this is non-critical background operation
+      console.error(`❌ Background: Supernode pin failed for ${hash}:`, error.message);
+      // Non-critical — local IPFS node serves via DHT anyway
     }
   }
 
@@ -411,17 +411,17 @@ class IPFSService {
    */
   async checkSupernodeHealth() {
     try {
-      const response = await axios.get(`${this.supernodeUrl}/api/v0/id`, { 
-        timeout: 10000 
+      const response = await axios.post(`${this.supernodeUrl}/api/v0/id`, null, {
+        timeout: 10000
       });
-      return { 
-        healthy: true, 
+      return {
+        healthy: true,
         data: response.data,
         endpoint: this.supernodeUrl
       };
     } catch (error) {
-      return { 
-        healthy: false, 
+      return {
+        healthy: false,
         error: error.message,
         endpoint: this.supernodeUrl
       };
@@ -434,17 +434,17 @@ class IPFSService {
    */
   async checkFallbackHealth() {
     try {
-      const response = await axios.get(`${this.fallbackUrl}/api/v0/id`, { 
-        timeout: 5000 
+      const response = await axios.post(`${this.fallbackUrl}/api/v0/id`, null, {
+        timeout: 5000
       });
-      return { 
-        healthy: true, 
+      return {
+        healthy: true,
         data: response.data,
         endpoint: this.fallbackUrl
       };
     } catch (error) {
-      return { 
-        healthy: false, 
+      return {
+        healthy: false,
         error: error.message,
         endpoint: this.fallbackUrl
       };
@@ -474,6 +474,23 @@ class IPFSService {
       }
       console.error(`Failed to unpin ${hash}: ${error.message}`);
       return false;
+    }
+  }
+
+  /**
+   * Run IPFS garbage collection to reclaim disk space from unpinned blocks.
+   * Should be called after a batch of unpins. Fire-and-forget safe.
+   * @returns {Promise<void>}
+   */
+  async runGarbageCollection() {
+    try {
+      console.log('🗑️ Running IPFS garbage collection...');
+      await axios.post(`${this.fallbackUrl}/api/v0/repo/gc`, null, {
+        timeout: 600000 // 10 minutes — GC can be slow on large repos
+      });
+      console.log('✅ IPFS GC complete');
+    } catch (error) {
+      console.warn(`⚠️ IPFS GC failed (non-critical): ${error.message}`);
     }
   }
 

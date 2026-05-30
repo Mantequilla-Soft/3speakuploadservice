@@ -265,12 +265,38 @@ router.post('/init',
 
       // Generate unique upload ID
       const crypto = require('crypto');
-      const upload_id = `${owner}_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
 
       console.log(`🚀 Initializing upload-first for ${owner}: ${originalFilename}`);
 
-      // Create temporary upload record
       const TempUpload = require('../models/TempUpload')();
+
+      // Deduplicate rapid double-submits from the same client (React double-render, etc.)
+      // If an identical upload was initialised in the last 5 seconds, reuse it.
+      const fiveSecondsAgo = new Date(Date.now() - 5000);
+      const recent = await TempUpload.findOne({
+        owner,
+        originalFilename,
+        size: Number(size),
+        finalized: false,
+        created: { $gte: fiveSecondsAgo }
+      }).sort({ created: -1 });
+
+      if (recent) {
+        const tusEndpoint = process.env.TUS_ENDPOINT || 'https://video.3speak.tv/files';
+        console.log(`♻️  Reusing recent upload for ${owner}: ${recent.upload_id}`);
+        return res.json({
+          success: true,
+          data: {
+            upload_id: recent.upload_id,
+            tus_endpoint: tusEndpoint,
+            expires_in: 14400
+          }
+        });
+      }
+
+      const upload_id = `${owner}_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+
+      // Create temporary upload record
       await TempUpload.createUpload({
         upload_id,
         owner,

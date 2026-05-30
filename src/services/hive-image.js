@@ -28,7 +28,7 @@ class HiveImageService {
       maxFailures: 5,
       isOpen: false,
       openedAt: null,
-      resetTimeout: 60000 // 60 seconds
+      resetTimeout: 1800000 // 30 minutes — Hive quota resets slowly
     };
     
     // Validate configuration at startup
@@ -224,6 +224,12 @@ class HiveImageService {
         return result;
       } catch (error) {
         lastError = error;
+
+        // 429 = quota exceeded — retrying immediately will always fail
+        if (error.status === 429) {
+          console.error('❌ Hive API quota exceeded (429), skipping retries');
+          break;
+        }
 
         // Cloudflare 52x errors (521=server down, 522=timeout, 523=unreachable, etc.)
         // mean the origin is completely unavailable — retrying immediately is pointless
